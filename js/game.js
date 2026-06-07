@@ -1098,46 +1098,29 @@ function renderHelp(){
 /* â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /* ── PROGRESSIVE JACKPOT OVERLAY ─────────────────────────────────────── */
-/* ── PROGRESSIVE JACKPOT CELEBRATION (replaces old text overlay) ─────────
-   Used for BOTH natural bingo wins AND force jackpot wins.
-   Shows the video celebration overlay, NOT the old jp-ov text screen.
-   ────────────────────────────────────────────────────────────────────── */
 function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, cardSerial, balBefore) {
-  var CEL_VIDS = [
-    'assets/videos/josie_dance.mp4',
-    'assets/videos/sasha_dance.mp4',
-    'assets/videos/sasha_alt.mp4'
-  ];
-  var cel  = document.getElementById('force-win-cel');
-  var vid  = document.getElementById('fw-video');
-  var amtEl = document.getElementById('fw-amt');
-  var subEl = document.getElementById('fw-sub');
-
-  if (amtEl) amtEl.textContent = '$' + progAmt.toFixed(2);
-  if (subEl) subEl.textContent = 'PROGRESSIVE JACKPOT!';
-  if (vid) {
-    vid.src = CEL_VIDS[Math.floor(Math.random() * CEL_VIDS.length)];
-    vid.load(); vid.play();
-  }
-  if (cel) cel.classList.add('show');
-
-  /* Wire dismiss to continue the spin */
-  var dismissBtn = document.getElementById('fw-dismiss');
+  var el  = document.getElementById('jp-ov');
+  var big = document.getElementById('jp-big');
+  var sub = document.getElementById('jp-sub');
+  var amt = document.getElementById('jp-amt');
+  if (big) big.textContent = 'PROGRESSIVE JACKPOT!';
+  if (sub) sub.textContent = 'HOT DOG IN 21 BALLS!';
+  if (amt) amt.textContent = (typeof Progressive !== 'undefined' ? Progressive.getDisplay() : '') + '  +  ' + fmtRaw(baseAmt) + ' BASE';
+  sndJackpot(); el.classList.add('on');
   function onDismiss() {
-    if (cel) cel.classList.remove('show');
-    if (dismissBtn) dismissBtn.removeEventListener('click', onDismiss);
-    /* Continue spin resolution */
+    el.classList.remove('on'); el.onclick = null; el.ontouchend = null;
+    if (big) big.textContent = 'JACKPOT!';
+    if (sub) sub.textContent = 'CONGRATULATIONS!';
     if (rsPatterns && rsPatterns.length > 0) {
       startPatternCycle([basePat]);
       setTimeout(function () {
         stopPatternCycle();
         runRS(rsPatterns, cpl, function (bonusTotal) {
-          setWin(baseAmt + bonusTotal + (S.lastWin - baseAmt), 'PROGRESSIVE JACKPOT!');
+          setWin(baseAmt + bonusTotal + (S.lastWin - baseAmt), 'PROGRESSIVE JACKPOT + RED SPIN!');
           document.getElementById('bt-box').classList.remove('on');
           startPatternCycle(winPatterns);
           opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
-            bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-            win:S.lastWin,
+            bet:cpl*DENOM, win:S.lastWin,
             patterns:winPatterns.map(function(p){return p.name;}),
             balBefore:balBefore, balAfter:S.bal});
           _spinDebounce = Date.now(); updUI(); S.spinning = false; setCtrl(true);
@@ -1146,23 +1129,14 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
     } else {
       startPatternCycle(winPatterns);
       opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
-        bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-        win:S.lastWin,
+        bet:cpl*DENOM, win:S.lastWin,
         patterns:winPatterns.map(function(p){return p.name;}),
         balBefore:balBefore, balAfter:S.bal});
       _spinDebounce = Date.now(); S.spinning = false; setCtrl(true); updUI();
     }
   }
-  if (dismissBtn) {
-    dismissBtn.removeEventListener('click', onDismiss);
-    dismissBtn.addEventListener('click', onDismiss);
-  }
-  /* Also allow tapping the overlay to dismiss */
-  if (cel) {
-    cel.onclick = function(e) {
-      if (e.target === cel) onDismiss();
-    };
-  }
+  el.onclick    = onDismiss;
+  el.ontouchend = function (e) { e.preventDefault(); onDismiss(); };
 }
 
 function updateProgMeter(value) {
