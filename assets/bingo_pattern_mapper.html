@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>StrayPups — Pattern Mapper v5</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@300;400;600&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080012;--panel:#0f001e;--gold:#d4af37;--gold2:#f5d878;
+  --orange:#e8a000;--orange2:#f5c842;--crim:#cc0000;--green:#00cc44;
+  --fd:'Bebas Neue',Impact,sans-serif;--fm:'Oswald','Arial Narrow',sans-serif;
+}
+html,body{min-height:100%;background:var(--bg);color:#fff;font-family:var(--fm);overflow-x:hidden}
+body{padding-bottom:80px}
+
+/* ── HEADER ── */
+#hdr{background:linear-gradient(135deg,#1a0035,#0a0018);border-bottom:3px solid var(--gold);
+  padding:12px 14px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100}
+#hdr-l{font-family:var(--fd);font-size:18px;letter-spacing:3px;color:var(--gold2)}
+#hdr-sub{font-size:8px;letter-spacing:2px;color:rgba(212,175,55,.45);margin-top:1px}
+#prog-bar{width:110px;height:4px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden;margin-top:3px}
+#prog-fill{height:100%;background:linear-gradient(90deg,#6600cc,var(--gold));border-radius:2px;transition:width .3s}
+#prog-txt{font-size:8px;letter-spacing:1px;color:rgba(212,175,55,.5);text-align:right}
+
+/* ── AVAILABLE BAR ── */
+#avail-wrap{margin:10px 12px 8px;padding:9px 11px;background:rgba(212,175,55,.05);
+  border:1px solid rgba(212,175,55,.18);border-radius:8px}
+#avail-ttl{font-size:8px;letter-spacing:2px;color:rgba(212,175,55,.45);margin-bottom:5px}
+#avail-list{display:flex;flex-wrap:wrap;gap:3px}
+.atag{font-size:8px;padding:2px 7px;border-radius:7px;
+  background:rgba(232,160,0,.12);border:1px solid rgba(232,160,0,.22);color:rgba(232,160,0,.85)}
+.atag.used{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08);
+  color:rgba(255,255,255,.18);text-decoration:line-through}
+
+/* ── CARDS ── */
+#cards{padding:0 10px;display:flex;flex-direction:column;gap:7px}
+.pcard{background:var(--panel);border:1.5px solid rgba(212,175,55,.16);border-radius:10px;overflow:hidden}
+.pcard.done{border-color:rgba(0,204,68,.45)}
+.pcard.editing{border-color:rgba(232,160,0,.6)}
+
+.pc-head{display:flex;align-items:center;gap:9px;padding:9px 11px;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;background:rgba(255,255,255,.02)}
+.pc-num{width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,.18);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;
+  color:rgba(255,255,255,.35);font-family:var(--fd)}
+.pcard.done .pc-num{background:var(--green);border-color:var(--green);color:#000;font-size:11px}
+.pcard.editing .pc-num{background:var(--orange);border-color:var(--orange2);color:#000}
+.pc-info{flex:1;min-width:0}
+.pc-name{font-family:var(--fd);font-size:15px;letter-spacing:2px;color:var(--gold2)}
+.pc-meta{font-size:8px;letter-spacing:1px;color:rgba(255,255,255,.35);margin-top:1px}
+.pc-badge{font-size:8px;padding:2px 7px;border-radius:8px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  color:rgba(255,255,255,.35);white-space:nowrap;flex-shrink:0;max-width:105px;
+  overflow:hidden;text-overflow:ellipsis}
+.pcard.done .pc-badge{background:rgba(0,204,68,.12);border-color:rgba(0,204,68,.28);color:#44ff88}
+.pcard.editing .pc-badge{background:rgba(232,160,0,.12);border-color:rgba(232,160,0,.3);color:var(--orange2)}
+
+/* ── BODY ── */
+.pc-body{border-top:1px solid rgba(255,255,255,.05);display:none;padding:11px}
+.pc-body.open{display:block}
+
+/* Tab bar */
+.tab-bar{display:flex;gap:5px;margin-bottom:12px}
+.tab-btn{flex:1;padding:7px;font-family:var(--fd);font-size:13px;letter-spacing:1px;
+  border-radius:6px;border:1.5px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.04);color:rgba(255,255,255,.4);
+  cursor:pointer;-webkit-appearance:none;transition:all .15s}
+.tab-btn.active{background:rgba(232,160,0,.12);border-color:var(--orange);color:var(--orange2)}
+
+/* Tab panels */
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ── GRID EDITOR ── */
+.grid-section{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.grid-wrap{flex-shrink:0}
+.grid-col-hdrs{display:grid;grid-template-columns:repeat(5,38px);gap:3px;margin-bottom:3px}
+.grid-col-lbl{width:38px;text-align:center;font-family:var(--fd);font-size:12px;
+  color:var(--gold2);letter-spacing:1px}
+.bingo-grid{display:grid;grid-template-columns:repeat(5,38px);gap:3px}
+.bg-cell{width:38px;height:38px;border-radius:5px;border:1.5px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.06);cursor:pointer;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  -webkit-tap-highlight-color:transparent;transition:all .1s;user-select:none}
+.bg-cell:active{transform:scale(.93)}
+.bg-cell.on{background:var(--orange);border-color:var(--orange2);box-shadow:0 0 6px rgba(232,160,0,.4)}
+.bg-cell.free{background:rgba(0,180,80,.18);border-color:rgba(0,220,80,.22)}
+.bg-cell.free::after{content:'★';font-size:13px;color:rgba(0,220,80,.6)}
+.bg-cell.free.on{background:var(--orange);border-color:var(--orange2)}
+.bg-cell.free.on::after{color:rgba(0,0,0,.35)}
+.edit-note{font-size:9px;color:rgba(255,255,255,.3);margin-top:6px;line-height:1.5}
+.edit-note strong{color:rgba(232,160,0,.6)}
+.grid-side{flex:1;min-width:120px}
+.gs-label{font-size:8px;letter-spacing:2px;color:rgba(212,175,55,.4);margin-bottom:6px}
+.pay-rows{display:flex;flex-direction:column;gap:3px;margin-bottom:10px}
+.pay-b{font-size:10px;padding:3px 8px;border-radius:5px;
+  background:rgba(212,175,55,.07);border:1px solid rgba(212,175,55,.15);color:var(--gold2)}
+.cell-count{font-size:11px;color:rgba(255,255,255,.5);margin-top:6px}
+.cell-count strong{color:var(--gold2)}
+.grid-actions{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}
+.ga-btn{padding:6px 10px;font-family:var(--fd);font-size:11px;letter-spacing:1px;
+  border-radius:5px;border:1px solid;cursor:pointer;-webkit-appearance:none}
+.ga-btn.clear{background:rgba(200,0,0,.1);border-color:rgba(200,0,0,.3);color:#ff6666}
+.ga-btn.reset{background:rgba(100,0,200,.1);border-color:rgba(100,0,200,.3);color:#bb88ff}
+
+/* ── REEL PICKER ── */
+.rp-note{font-size:9px;color:rgba(255,255,255,.35);margin-bottom:8px;line-height:1.5}
+.rp-note strong{color:rgba(232,160,0,.7)}
+.no-avail{font-size:11px;color:var(--crim);padding:10px;text-align:center;
+  border:1px solid rgba(200,0,0,.28);border-radius:6px;background:rgba(200,0,0,.07)}
+.rp-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.rp-opt{padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.04);
+  border:1.5px solid rgba(255,255,255,.09);cursor:pointer;
+  display:flex;align-items:flex-start;gap:6px;-webkit-tap-highlight-color:transparent;transition:all .13s}
+.rp-opt:active{transform:scale(.97)}
+.rp-opt.sel{background:rgba(232,160,0,.1);border-color:var(--orange)}
+.rp-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,.2);
+  flex-shrink:0;margin-top:2px}
+.rp-opt.sel .rp-dot{background:var(--orange);border-color:var(--orange2)}
+.rp-name{font-family:var(--fd);font-size:12px;letter-spacing:1px;
+  color:rgba(255,255,255,.55);line-height:1.1}
+.rp-opt.sel .rp-name{color:var(--gold2)}
+.rp-sub{font-size:7px;color:rgba(255,255,255,.25);letter-spacing:.4px}
+.rp-pay{font-size:8px;color:rgba(212,175,55,.38);margin-top:1px}
+.rp-opt.sel .rp-pay{color:rgba(212,175,55,.65)}
+.clear-sel-btn{margin-top:9px;padding:6px 12px;font-family:var(--fd);font-size:11px;
+  letter-spacing:1px;background:rgba(200,0,0,.1);border:1px solid rgba(200,0,0,.3);
+  color:#ff6666;border-radius:5px;cursor:pointer;-webkit-appearance:none}
+
+/* ── SUBMIT ── */
+#submit-wrap{position:fixed;bottom:0;left:0;right:0;padding:9px 12px;
+  background:linear-gradient(to top,rgba(8,0,18,.98),rgba(8,0,18,.65));
+  border-top:1px solid rgba(212,175,55,.13)}
+#submit-btn{width:100%;padding:12px;font-family:var(--fd);font-size:16px;
+  letter-spacing:3px;background:linear-gradient(135deg,#4a0000,#aa0000);
+  color:#fff;border:2px solid var(--crim);border-radius:8px;cursor:pointer;-webkit-appearance:none}
+#submit-btn:disabled{opacity:.32}
+#submit-btn:not(:disabled){box-shadow:0 0 14px rgba(200,0,0,.35)}
+
+/* ── RESULT ── */
+#result-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.96);
+  z-index:200;flex-direction:column;overflow-y:auto;padding:16px 12px 50px}
+#result-ov.on{display:flex}
+#res-title{font-family:var(--fd);font-size:20px;letter-spacing:4px;color:var(--gold2);
+  text-align:center;margin-bottom:3px}
+#res-sub{font-size:8px;letter-spacing:2px;color:rgba(212,175,55,.38);
+  text-align:center;margin-bottom:12px}
+#res-box{background:#06000f;border:1px solid var(--gold);border-radius:8px;
+  padding:11px;font-size:9px;color:rgba(255,255,255,.72);line-height:1.9;
+  font-family:'Courier New',monospace;white-space:pre-wrap;word-break:break-all;margin-bottom:10px}
+#res-copy{width:100%;padding:11px;font-family:var(--fd);font-size:15px;
+  letter-spacing:2px;background:linear-gradient(135deg,#003300,#005500);
+  color:#fff;border:2px solid var(--green);border-radius:8px;cursor:pointer;
+  -webkit-appearance:none;margin-bottom:7px}
+#res-back{width:100%;padding:8px;font-family:var(--fd);font-size:12px;
+  letter-spacing:2px;background:transparent;color:rgba(255,255,255,.3);
+  border:1px solid rgba(255,255,255,.1);border-radius:8px;cursor:pointer;-webkit-appearance:none}
+#toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+  background:rgba(0,200,60,.92);color:#fff;padding:6px 16px;border-radius:14px;
+  font-size:10px;letter-spacing:1px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:300}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <div>
+    <div id="hdr-l">PATTERN MAPPER</div>
+    <div id="hdr-sub">STRAYPUPS BIG MUNNY v5</div>
+  </div>
+  <div style="text-align:right">
+    <div id="prog-bar"><div id="prog-fill" style="width:0%"></div></div>
+    <div id="prog-txt">0 / 21</div>
+  </div>
+</div>
+
+<div id="avail-wrap">
+  <div id="avail-ttl">AVAILABLE REEL COMBINATIONS</div>
+  <div id="avail-list"></div>
+</div>
+
+<div id="cards"></div>
+
+<div id="submit-wrap">
+  <button id="submit-btn" disabled>GENERATE MAPPING — 0/21</button>
+</div>
+
+<div id="result-ov">
+  <div id="res-title">✓ MAPPING COMPLETE</div>
+  <div id="res-sub">COPY AND PASTE THIS TO CLAUDE</div>
+  <div id="res-box"></div>
+  <button id="res-copy">📋 COPY TO CLIPBOARD</button>
+  <button id="res-back">← BACK TO EDIT</button>
+</div>
+<div id="toast">COPIED!</div>
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────────────────
+// Cell index = row*5+col. Row0=top, Col0=B Col1=I Col2=N Col3=G Col4=O
+// Free space = cell 12 (row2,col2=N). All patterns editable in-tool.
+
+var DEFAULT_PATTERNS = [
+  { name:'Corporal Stripes',  balls:27, pay:[800,1600,2500],  cells:[2,6,7,8,10,11,12,13,14,15,19] },
+  { name:'Double Cross',      balls:23, pay:[80,160,240],     cells:[2,6,7,8,12,16,17,18,22] },
+  { name:'G Flat',            balls:34, pay:[40,80,120],      cells:[2,3,4,7,12,15,16,17,20,21,22] },
+  { name:'Christmas Tree',    balls:37, pay:[25,50,75],       cells:[2,6,7,8,10,11,12,13,14,17,22] },
+  { name:'Private Stripes',   balls:28, pay:[12,24,38],       cells:[1,3,6,8,11,13,16,18,21,23] },
+  { name:'Baby Buggy',        balls:27, pay:[10,20,30],       cells:[8,10,11,12,13,15,16,17,18,21,23] },
+  { name:'Small Diamond',     balls:36, pay:[5,10,15],        cells:[7,11,12,13,17] },
+  { name:'EII',               balls:37, pay:[4,8,12],         cells:[0,5,10,15,20,21,22,23,24] },
+  { name:'Open Diamond',      balls:40, pay:[2,4,6],          cells:[2,10,14,22] },
+  { name:'Pyramid',           balls:27, pay:[160,320,480],    cells:[12,16,17,18,20,21,22,23,24] },
+  { name:'Arrowhead',         balls:28, pay:[80,160,240],     cells:[2,6,7,8,10,12,14,17,22] },
+  { name:'Valentine',         balls:36, pay:[50,100,150],     cells:[1,3,5,6,7,8,9,10,11,12,13,14,16,17,18,22] },
+  { name:'Tee',               balls:38, pay:[20,40,60],       cells:[0,1,2,3,4,7,12,17,22] },
+  { name:'Stepladder',        balls:36, pay:[10,20,30],       cells:[4,8,9,12,13,16,17,20,21] },
+  { name:'Poodle Dog',        balls:35, pay:[20,40,60],       cells:[0,1,5,6,7,11,13,14,16,18,19,21] },
+  { name:'Hopscotch',         balls:39, pay:[10,20,30],       cells:[1,3,7,11,13,15,17,21,23] },
+  { name:'Cross Corners',     balls:27, pay:[320,640,960],    cells:[0,4,5,7,9,12,15,17,19,20,24] },
+  { name:'The Kite',          balls:34, pay:[160,320,480],    cells:[0,1,2,3,5,6,7,10,11,15,19,24] },
+  { name:'Four Leaf Clover',  balls:34, pay:[100,200,300],    cells:[0,1,5,6,3,4,8,9,15,16,20,21,18,19,23,24] },
+  { name:'Hot Dog',           balls:39, pay:[40,80,120],      cells:[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19] },
+  { name:'Make Cents',        balls:29, pay:[40,80,120],      cells:[2,6,7,8,11,12,16,17,18,22] }
+];
+
+var REELS = [
+  { id:'jp',   name:'3× STRAYPUP',       sub:'JACKPOT',             pay:'800/1600/2500' },
+  { id:'7w4',  name:'SP+SP+SEVEN',        sub:'WILD ×4 SEVEN',       pay:'200/400/600'   },
+  { id:'7w2',  name:'SP+SEVEN+SEVEN',     sub:'WILD ×2 SEVEN',       pay:'100/200/300'   },
+  { id:'7',    name:'3× SEVEN',           sub:'THREE SEVENS',         pay:'50/100/150'    },
+  { id:'3bw4', name:'SP+SP+TRIPLE BAR',   sub:'WILD ×4 TRIPLE',      pay:'100/200/300'   },
+  { id:'3bw2', name:'SP+TRIPLE+TRIPLE',   sub:'WILD ×2 TRIPLE',      pay:'50/100/150'    },
+  { id:'3b',   name:'3× TRIPLE BAR',      sub:'THREE TRIPLE',         pay:'25/50/75'      },
+  { id:'2bw4', name:'SP+SP+DOUBLE BAR',   sub:'WILD ×4 DOUBLE',      pay:'60/120/180'    },
+  { id:'2bw2', name:'SP+DOUBLE+DOUBLE',   sub:'WILD ×2 DOUBLE',      pay:'30/60/90'      },
+  { id:'2b',   name:'3× DOUBLE BAR',      sub:'THREE DOUBLE',         pay:'15/30/45'      },
+  { id:'1bw4', name:'SP+SP+SINGLE BAR',   sub:'WILD ×4 SINGLE',      pay:'32/64/96'      },
+  { id:'1bw2', name:'SP+SINGLE+SINGLE',   sub:'WILD ×2 SINGLE',      pay:'16/32/48'      },
+  { id:'1b',   name:'3× SINGLE BAR',      sub:'THREE SINGLE',         pay:'8/16/24'       },
+  { id:'mb',   name:'ANY 3 BARS',         sub:'MIXED BARS',           pay:'2/4/6'         },
+  { id:'spch', name:'SP + CHERRY',        sub:'STRAYPUP + CHERRY',    pay:'varies'        },
+  { id:'spmb', name:'SP + MIXED BARS',    sub:'STRAYPUP + ANY BARS',  pay:'varies'        },
+  { id:'ch3',  name:'3× CHERRY',          sub:'THREE CHERRIES',       pay:'3/6/9'         },
+  { id:'ch2',  name:'CHERRY + CHERRY',    sub:'TWO CHERRIES',         pay:'2/4/6'         },
+  { id:'ch1',  name:'1× CHERRY',          sub:'ONE CHERRY',           pay:'1/2/3'         },
+  { id:'sp1b', name:'SP + SINGLE BAR',    sub:'STRAYPUP + 1 BAR',     pay:'varies'        },
+  { id:'sp2b', name:'SP + DOUBLE BAR',    sub:'STRAYPUP + 2 BAR',     pay:'varies'        },
+  { id:'spspch', name:'SP+SP+CHERRY',      sub:'WILD ×4 CHERRY',       pay:'varies'        },
+  { id:'spchch', name:'SP+CHERRY+CHERRY',  sub:'WILD ×2 CHERRY',       pay:'varies'        }
+];
+
+var COLS = ['B','I','N','G','O'];
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+// Deep-copy patterns so edits don't affect defaults
+var patterns = DEFAULT_PATTERNS.map(function(p){
+  return { name:p.name, balls:p.balls, pay:p.pay.slice(), cells:p.cells.slice() };
+});
+var selections  = {};   // patternName → reelId
+var usedReels   = {};   // reelId → patternName
+var openIdx     = -1;
+var activeTab   = {};   // pi → 'edit'|'reel'
+
+// ── AVAILABLE BAR ─────────────────────────────────────────────────────────
+function buildAvailBar() {
+  var list = document.getElementById('avail-list');
+  list.innerHTML = '';
+  REELS.forEach(function(r){
+    var t = document.createElement('div');
+    t.className = 'atag' + (usedReels[r.id] ? ' used' : '');
+    t.textContent = r.name;
+    list.appendChild(t);
+  });
+}
+
+// ── MAIN CARD LIST ────────────────────────────────────────────────────────
+function buildCards() {
+  var wrap = document.getElementById('cards');
+  wrap.innerHTML = '';
+  patterns.forEach(function(pat, pi){
+    var card = document.createElement('div');
+    card.className = 'pcard'; card.id = 'pc'+pi;
+
+    // Head
+    var head = document.createElement('div');
+    head.className = 'pc-head';
+    var numEl = document.createElement('div');
+    numEl.className = 'pc-num'; numEl.id = 'num'+pi;
+    numEl.textContent = selections[pat.name] ? '✓' : (pi+1);
+    var info = document.createElement('div');
+    info.className = 'pc-info';
+    info.innerHTML =
+      '<div class="pc-name">'+pat.name+'</div>'+
+      '<div class="pc-meta">'+pat.balls+' BALLS &nbsp;|&nbsp; '+pat.cells.length+' CELLS</div>';
+    var badge = document.createElement('div');
+    badge.className = 'pc-badge'; badge.id = 'badge'+pi;
+    badge.textContent = selections[pat.name]
+      ? (REELS.filter(function(r){return r.id===selections[pat.name];})[0]||{name:'?'}).name
+      : 'NOT SET';
+    head.appendChild(numEl); head.appendChild(info); head.appendChild(badge);
+    head.addEventListener('click', function(){ toggleCard(pi); });
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'pc-body'; body.id = 'bd'+pi;
+
+    card.appendChild(head); card.appendChild(body);
+    wrap.appendChild(card);
+  });
+}
+
+function refreshCard(pi) {
+  var pat = patterns[pi];
+  var sel = selections[pat.name];
+  var numEl = document.getElementById('num'+pi);
+  var badge = document.getElementById('badge'+pi);
+  var card  = document.getElementById('pc'+pi);
+  numEl.textContent = sel ? '✓' : (pi+1);
+  badge.textContent = sel
+    ? (REELS.filter(function(r){return r.id===sel;})[0]||{name:'?'}).name
+    : 'NOT SET';
+  card.classList.toggle('done', !!sel);
+  card.classList.toggle('editing', openIdx===pi && !sel);
+  var metaEl = card.querySelector('.pc-meta');
+  if (metaEl) metaEl.textContent = pat.balls+' BALLS \u00A0|\u00A0 '+pat.cells.length+' CELLS';
+}
+
+// ── TOGGLE OPEN/CLOSE ─────────────────────────────────────────────────────
+function toggleCard(pi) {
+  var wasOpen = openIdx === pi;
+  // Close all
+  patterns.forEach(function(p,i){
+    document.getElementById('bd'+i).classList.remove('open');
+    document.getElementById('pc'+i).classList.remove('editing');
+  });
+  openIdx = -1;
+  if (!wasOpen) {
+    openIdx = pi;
+    if (!activeTab[pi]) activeTab[pi] = 'edit';
+    buildBody(pi);
+    document.getElementById('bd'+pi).classList.add('open');
+    document.getElementById('pc'+pi).classList.add('editing');
+    setTimeout(function(){
+      document.getElementById('pc'+pi).scrollIntoView({behavior:'smooth',block:'start'});
+    },60);
+  }
+}
+
+// ── BUILD BODY ────────────────────────────────────────────────────────────
+function buildBody(pi) {
+  var body = document.getElementById('bd'+pi);
+  body.innerHTML = '';
+  var tab = activeTab[pi] || 'edit';
+
+  // Tab bar
+  var tabBar = document.createElement('div');
+  tabBar.className = 'tab-bar';
+  ['edit','reel'].forEach(function(t){
+    var btn = document.createElement('button');
+    btn.className = 'tab-btn' + (tab===t?' active':'');
+    btn.textContent = t==='edit' ? '✏️ EDIT PATTERN' : '🎰 ASSIGN REEL';
+    btn.addEventListener('click', function(){ activeTab[pi]=t; buildBody(pi); });
+    tabBar.appendChild(btn);
+  });
+  body.appendChild(tabBar);
+
+  if (tab==='edit') buildEditPanel(pi, body);
+  else              buildReelPanel(pi, body);
+}
+
+// ── EDIT PANEL ────────────────────────────────────────────────────────────
+function buildEditPanel(pi, body) {
+  var pat = patterns[pi];
+  var cellSet = {};
+  pat.cells.forEach(function(c){ cellSet[c]=true; });
+
+  var panel = document.createElement('div');
+  panel.className = 'tab-panel active';
+
+  var sec = document.createElement('div');
+  sec.className = 'grid-section';
+
+  // Grid
+  var gwrap = document.createElement('div');
+  gwrap.className = 'grid-wrap';
+
+  var hdrs = document.createElement('div');
+  hdrs.className = 'grid-col-hdrs';
+  COLS.forEach(function(l){
+    var d = document.createElement('div'); d.className='grid-col-lbl'; d.textContent=l;
+    hdrs.appendChild(d);
+  });
+  gwrap.appendChild(hdrs);
+
+  var grid = document.createElement('div');
+  grid.className = 'bingo-grid';
+  for (var ci=0; ci<25; ci++) {
+    var cell = document.createElement('div');
+    var cls = 'bg-cell';
+    if (ci===12) cls += ' free';
+    if (cellSet[ci]) cls += ' on';
+    cell.className = cls;
+    cell.dataset.ci = ci;
+    (function(idx){
+      cell.addEventListener('click', function(){
+        var i = pat.cells.indexOf(idx);
+        if (i>=0) pat.cells.splice(i,1); else pat.cells.push(idx);
+        buildBody(pi); refreshCard(pi);
+      });
+    })(ci);
+    grid.appendChild(cell);
+  }
+  gwrap.appendChild(grid);
+
+  var note = document.createElement('div');
+  note.className = 'edit-note';
+  note.innerHTML = '<strong>TAP CELLS</strong> to toggle on/off<br>★ = Free space cell (also toggleable)';
+  gwrap.appendChild(note);
+  sec.appendChild(gwrap);
+
+  // Side info
+  var side = document.createElement('div');
+  side.className = 'grid-side';
+  side.innerHTML =
+    '<div class="gs-label">PAYOUTS</div>'+
+    '<div class="pay-rows">'+
+      '<div class="pay-b">BET 1 → $'+pat.pay[0]+'</div>'+
+      '<div class="pay-b">BET 2 → $'+pat.pay[1]+'</div>'+
+      '<div class="pay-b">BET 3 → $'+pat.pay[2]+'</div>'+
+    '</div>'+
+    '<div class="cell-count">Cells lit: <strong>'+pat.cells.length+'</strong></div>';
+
+  var actions = document.createElement('div');
+  actions.className = 'grid-actions';
+
+  var clearBtn = document.createElement('button');
+  clearBtn.className = 'ga-btn clear'; clearBtn.textContent = 'CLEAR ALL';
+  clearBtn.addEventListener('click', function(){
+    pat.cells = [];
+    buildBody(pi); refreshCard(pi);
+  });
+
+  var resetBtn = document.createElement('button');
+  resetBtn.className = 'ga-btn reset'; resetBtn.textContent = 'RESET DEFAULT';
+  resetBtn.addEventListener('click', function(){
+    pat.cells = DEFAULT_PATTERNS[pi].cells.slice();
+    buildBody(pi); refreshCard(pi);
+  });
+
+  actions.appendChild(clearBtn); actions.appendChild(resetBtn);
+  side.appendChild(actions);
+  sec.appendChild(side);
+  panel.appendChild(sec);
+  body.appendChild(panel);
+}
+
+// ── REEL PANEL ────────────────────────────────────────────────────────────
+function buildReelPanel(pi, body) {
+  var pat = patterns[pi];
+  var patName = pat.name;
+  var curSel  = selections[patName];
+
+  var panel = document.createElement('div');
+  panel.className = 'tab-panel active';
+
+  var note = document.createElement('div');
+  note.className = 'rp-note';
+  note.innerHTML = 'Pick the reel combination for <strong>'+patName+'</strong>. Each combo can only be used once.';
+  panel.appendChild(note);
+
+  // Available reels for this pattern
+  var avail = REELS.filter(function(r){
+    return !usedReels[r.id] || usedReels[r.id]===patName;
+  });
+
+  if (avail.length===0) {
+    var none = document.createElement('div');
+    none.className = 'no-avail';
+    none.textContent = 'All combinations used. Clear another pattern to free one up.';
+    panel.appendChild(none);
+    body.appendChild(panel);
+    return;
+  }
+
+  var grid = document.createElement('div');
+  grid.className = 'rp-grid';
+  avail.forEach(function(reel){
+    var opt = document.createElement('div');
+    opt.className = 'rp-opt' + (curSel===reel.id?' sel':'');
+    opt.innerHTML =
+      '<div class="rp-dot"></div>'+
+      '<div>'+
+        '<div class="rp-name">'+reel.name+'</div>'+
+        '<div class="rp-sub">'+reel.sub+'</div>'+
+        '<div class="rp-pay">'+reel.pay+'</div>'+
+      '</div>';
+    opt.addEventListener('click', function(){ assignReel(pi, reel.id); });
+    grid.appendChild(opt);
+  });
+  panel.appendChild(grid);
+
+  if (curSel) {
+    var clrBtn = document.createElement('button');
+    clrBtn.className = 'clear-sel-btn'; clrBtn.textContent = 'CLEAR SELECTION';
+    clrBtn.addEventListener('click', function(){ clearReel(pi); });
+    panel.appendChild(clrBtn);
+  }
+
+  body.appendChild(panel);
+}
+
+function assignReel(pi, reelId) {
+  var patName = patterns[pi].name;
+  var prev = selections[patName];
+  if (prev) delete usedReels[prev];
+  selections[patName] = reelId;
+  usedReels[reelId]   = patName;
+  buildAvailBar();
+  updateProgress();
+  refreshCard(pi);
+  buildBody(pi);
+  // Auto-advance to next unmapped
+  setTimeout(function(){
+    for (var j=pi+1; j<patterns.length; j++){
+      if (!selections[patterns[j].name]){ toggleCard(j); return; }
+    }
+    document.getElementById('bd'+pi).classList.remove('open');
+    document.getElementById('pc'+pi).classList.remove('editing');
+    openIdx=-1;
+  }, 380);
+}
+
+function clearReel(pi) {
+  var patName = patterns[pi].name;
+  var prev = selections[patName];
+  if (prev) delete usedReels[prev];
+  delete selections[patName];
+  buildAvailBar();
+  updateProgress();
+  refreshCard(pi);
+  buildBody(pi);
+}
+
+function updateProgress() {
+  var done = Object.keys(selections).length;
+  var pct  = (done/patterns.length)*100;
+  document.getElementById('prog-fill').style.width = pct+'%';
+  document.getElementById('prog-txt').textContent  = done+' / '+patterns.length;
+  var btn = document.getElementById('submit-btn');
+  btn.textContent = done>=patterns.length
+    ? '✓ GENERATE — ALL DONE!'
+    : 'GENERATE PARTIAL — '+done+'/'+patterns.length+' MAPPED';
+  btn.disabled = false;
+}
+
+// ── GENERATE OUTPUT ───────────────────────────────────────────────────────
+document.getElementById('submit-btn').addEventListener('click', function(){
+  var lines = ['PATTERN_REEL_MAP = {'];
+  patterns.forEach(function(pat){
+    var rid   = selections[pat.name]||'UNMAPPED';
+    var reel  = REELS.filter(function(r){return r.id===rid;})[0]||{name:'?'};
+    var cellStr = JSON.stringify(pat.cells.slice().sort(function(a,b){return a-b;}));
+    lines.push('  "'+pat.name+'": {');
+    lines.push('    reel: "'+rid+'",  // '+reel.name);
+    lines.push('    balls: '+pat.balls+', pay: ['+pat.pay+'],');
+    lines.push('    cells: '+cellStr);
+    lines.push('  },');
+  });
+  lines.push('};');
+  document.getElementById('res-box').textContent = lines.join('\n');
+  document.getElementById('result-ov').classList.add('on');
+});
+
+document.getElementById('res-copy').addEventListener('click', function(){
+  var text = document.getElementById('res-box').textContent;
+  if (navigator.clipboard){
+    navigator.clipboard.writeText(text).then(showToast);
+  } else {
+    var ta=document.createElement('textarea');
+    ta.value=text;ta.style.cssText='position:fixed;opacity:0';
+    document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+    showToast();
+  }
+});
+document.getElementById('res-back').addEventListener('click', function(){
+  document.getElementById('result-ov').classList.remove('on');
+});
+function showToast(){
+  var t=document.getElementById('toast');
+  t.classList.add('on');
+  setTimeout(function(){t.classList.remove('on');},2000);
+}
+
+// ── SAVE / LOAD ───────────────────────────────────────────────────────────
+var STORAGE_KEY = 'straypups_mapper_v5';
+
+function saveState() {
+  try {
+    var state = { selections: selections, cells: {} };
+    patterns.forEach(function(p,pi){ state.cells[p.name] = p.cells.slice(); });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch(e) {}
+}
+
+function loadState() {
+  // First load pre-saved screenshot data as baseline
+  var baseline = {"Corporal Stripes": "jp", "Double Cross": "7", "G Flat": "3b", "Christmas Tree": "2b", "Private Stripes": "1b", "Baby Buggy": "ch3", "Small Diamond": "mb", "EII": "ch2", "Open Diamond": "ch1", "Pyramid": "7w2", "Arrowhead": "3bw2", "Valentine": "2bw2", "Tee": "1bw2", "Stepladder": "spmb", "Hopscotch": "spch", "Cross Corners": "7w4", "The Kite": "3bw4", "Four Leaf Clover": "2bw4", "Hot Dog": "1bw4",
+    "Poodle Dog": "spspch",
+    "Make Cents": "spchch"};
+  // Try localStorage override
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      var state = JSON.parse(raw);
+      if (state.selections) return state;
+    }
+  } catch(e) {}
+  // Return baseline wrapped in state format
+  return { selections: baseline, cells: {} };
+}
+
+function applyState(state) {
+  selections = {};
+  usedReels  = {};
+  if (state.selections) {
+    Object.keys(state.selections).forEach(function(patName) {
+      var rid = state.selections[patName];
+      // Find pattern index
+      var pi = -1;
+      patterns.forEach(function(p,i){ if(p.name===patName) pi=i; });
+      if (pi>=0 && rid) {
+        selections[patName] = rid;
+        usedReels[rid] = patName;
+      }
+    });
+  }
+  if (state.cells) {
+    Object.keys(state.cells).forEach(function(patName) {
+      patterns.forEach(function(p) {
+        if (p.name===patName && state.cells[patName]) {
+          p.cells = state.cells[patName].slice();
+        }
+      });
+    });
+  }
+}
+
+// Hook save into assign/clear
+var _origAssign = assignReel;
+assignReel = function(pi, reelId) {
+  _origAssign(pi, reelId);
+  saveState();
+};
+var _origClear = clearReel;
+clearReel = function(pi) {
+  _origClear(pi);
+  saveState();
+};
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+var savedState = loadState();
+applyState(savedState);
+buildCards();
+// Refresh all card badges after applying state
+patterns.forEach(function(p,pi){ refreshCard(pi); });
+buildAvailBar();
+updateProgress();
+// Open first unmapped card
+var firstUnmapped = -1;
+patterns.forEach(function(p,pi){ if(firstUnmapped<0 && !selections[p.name]) firstUnmapped=pi; });
+setTimeout(function(){ toggleCard(firstUnmapped>=0 ? firstUnmapped : 0); }, 250);
+</script>
+</body>
+</html>
