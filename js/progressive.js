@@ -118,6 +118,7 @@ var Progressive = (function () {
         _connected = true;
         _fetchRow(function () {
           _subscribe();
+          _startPresence();
           if (typeof onReady === 'function') onReady();
         });
       } catch (e) {
@@ -166,6 +167,7 @@ var Progressive = (function () {
   return {
     init: init, contribute: contribute, hit: hit,
     mustHit: mustHit, getDisplay: getDisplay,
-    getValue: getValue, onChange: onChange, isConnected: isConnected
+    getValue: getValue, onChange: onChange, isConnected: isConnected,
+    getPresenceCount: getPresenceCount, onPresenceChange: onPresenceChange
   };
 }());
