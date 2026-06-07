@@ -2,7 +2,7 @@
  * CACHE STRATEGY: Network-first for JS/HTML, cache-first for assets
  * Bump CACHE_VER on every release to force fresh load
  */
-var CACHE_VER = 'spbm5-v5.28e';
+var CACHE_VER = 'spbm5-v2.4';
 var JS_FILES  = ['/js/', '.js'];
 var HTML_FILES = ['index.html', '/'];
 
