@@ -39,8 +39,10 @@ function sizeLayout(){
   hdrEl.style.height=hdrH+'px';
   hdrImg.style.width='100%'; hdrImg.style.height=hdrH+'px';
   hdrImg.style.objectFit='contain'; hdrImg.style.objectPosition='center center';
-  // Bingo section: 32% of remaining height
-  var remH=vph-hdrH;
+  // Bingo section: 32% of remaining height (subtract prog-meter if present)
+  var progMeterEl=document.getElementById('prog-meter');
+  var progMeterH=progMeterEl?progMeterEl.offsetHeight:0;
+  var remH=vph-hdrH-progMeterH;
   var bingoH=Math.round(remH*0.32);
   document.getElementById('bingo-section').style.height=bingoH+'px';
   sizeBingoElements(bingoH, vpw);
