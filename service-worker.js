@@ -4,7 +4,7 @@
  * AUTO-UPDATE: Detects new version, clears old cache, reloads all clients silently.
  * Bump CACHE_VER on every release — everything else is automatic.
  */
-var CACHE_VER = 'spbm5-v2.4';
+var CACHE_VER = 'spbm5-v2.7';
 
 /* Files to pre-cache on install */
 var CACHE_URLS = ['./index.html','./css/styles.css','./js/progressive.js','./js/config.js','./js/game.js','./js/operator.js','./assets/scott_full.png','./assets/banner.jpg','./assets/splash.jpg','./assets/credits_addup.wav','./assets/red_spin_music.mp3','./assets/ring1.mp3','./assets/splash_welcome.wav'];

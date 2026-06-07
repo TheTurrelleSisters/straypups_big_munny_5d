@@ -197,12 +197,12 @@
 
 <!-- FORCE WIN CELEBRATION — shown on winner device -->
 <div id="force-win-cel">
-  <video id="fw-video" autoplay loop muted playsinline></video>
+  <video id="fw-video" autoplay loop muted playsinline webkit-playsinline></video>
   <div id="fw-title">PROGRESSIVE JACKPOT!</div>
   <div id="fw-amt">$0.00</div>
-  <div id="fw-sub">YOU WON THE FORCE JACKPOT!</div>
+  <div id="fw-sub" style="font-size:11px;color:#ffaa00;letter-spacing:1px;text-align:center">CONGRATULATIONS! &#127881;</div>
   <button id="fw-dismiss" onclick="document.getElementById('force-win-cel').classList.remove('show')">
-    COLLECT &#127881;
+    COLLECT WINNINGS &#127881;
   </button>
 </div>
 
@@ -241,5 +241,64 @@
 font-size:7px;color:rgba(255,215,0,0.18);letter-spacing:2px;pointer-events:none;
 z-index:1;font-family:Arial,sans-serif;font-weight:normal">
 GOLD COINS CASINO &bull; v2.4</div>
+
+<!-- OPERATOR BROADCAST MESSAGE BANNER -->
+<div id="op-message-banner">
+  <div id="op-msg-icon">&#128226;</div>
+  <div id="op-msg-body">
+    <div id="op-msg-from">&#9733; MESSAGE FROM GOLD COINS CASINO</div>
+    <div id="op-msg-text"></div>
+  </div>
+  <div id="op-msg-close" onclick="dismissOpMessage()">&#10005;</div>
+</div>
+<script>
+(function(){
+  var _msgQueue = [];
+  var _msgShowing = false;
+  var ICONS = { general:'&#128226;', jackpot:'&#127922;', event:'&#9889;', bonus:'&#127873;' };
+
+  function dismissOpMessage() {
+    var el = document.getElementById('op-message-banner');
+    if (el) el.classList.remove('show');
+    _msgShowing = false;
+    /* Show next queued message after short delay */
+    if (_msgQueue.length > 0) {
+      setTimeout(showNextMessage, 800);
+    }
+  }
+  window.dismissOpMessage = dismissOpMessage;
+
+  function showNextMessage() {
+    if (_msgQueue.length === 0) return;
+    var msg = _msgQueue.shift();
+    _msgShowing = true;
+    var el   = document.getElementById('op-message-banner');
+    var icon = document.getElementById('op-msg-icon');
+    var text = document.getElementById('op-msg-text');
+    if (icon) icon.innerHTML = ICONS[msg.type] || ICONS.general;
+    if (text) text.textContent = msg.message;
+    if (el) el.classList.add('show');
+    /* Auto-dismiss after 12 seconds */
+    setTimeout(function() {
+      if (_msgShowing) dismissOpMessage();
+    }, 12000);
+  }
+
+  function queueMessage(msg) {
+    _msgQueue.push(msg);
+    if (!_msgShowing) showNextMessage();
+  }
+
+  /* Hook into Progressive module once it's ready */
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      if (typeof Progressive !== 'undefined' && Progressive.onMessage) {
+        Progressive.onMessage(queueMessage);
+      }
+    }, 500);
+  });
+}());
+</script>
+
 </body>
 </html>
