@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Outer glow -->
+  <defs>
+    <radialGradient id="dg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="40%" stop-color="#a8d8f0" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#1a6fa8" stop-opacity="1"/>
+    </radialGradient>
+    <radialGradient id="fg" cx="35%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="60%" stop-color="#d0eeff" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#4ab0e8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Shadow -->
+  <ellipse cx="50" cy="93" rx="28" ry="5" fill="rgba(0,0,0,0.25)"/>
+
+  <!-- Main diamond body -->
+  <!-- Top facets (crown) -->
+  <polygon points="50,8 72,35 28,35" fill="url(#dg)" stroke="#0d4f7a" stroke-width="1.5" filter="url(#glow)"/>
+
+  <!-- Left crown facet -->
+  <polygon points="28,35 50,8 22,32" fill="#5bb8e8" stroke="#0d4f7a" stroke-width="1"/>
+  <!-- Right crown facet -->
+  <polygon points="72,35 50,8 78,32" fill="#3a9fd4" stroke="#0d4f7a" stroke-width="1"/>
+
+  <!-- Left top crown -->
+  <polygon points="22,32 28,35 14,44" fill="#7acfee" stroke="#0d4f7a" stroke-width="1"/>
+  <!-- Right top crown -->
+  <polygon points="78,32 72,35 86,44" fill="#2288bb" stroke="#0d4f7a" stroke-width="1"/>
+
+  <!-- Main girdle / pavilion -->
+  <!-- Center large facet -->
+  <polygon points="28,35 72,35 50,88" fill="#1e7ab8" stroke="#0d4f7a" stroke-width="1.5"/>
+
+  <!-- Left pavilion facet -->
+  <polygon points="14,44 28,35 50,88" fill="#4aadd6" stroke="#0d4f7a" stroke-width="1"/>
+  <!-- Right pavilion facet -->
+  <polygon points="86,44 72,35 50,88" fill="#0e5a8a" stroke="#0d4f7a" stroke-width="1"/>
+
+  <!-- Center girdle line -->
+  <line x1="14" y1="44" x2="86" y2="44" stroke="#0d4f7a" stroke-width="1" opacity="0.5"/>
+
+  <!-- Highlight facet -->
+  <polygon points="38,13 50,8 46,28" fill="url(#fg)" opacity="0.85"/>
+  <polygon points="50,8 62,13 54,28" fill="white" opacity="0.25"/>
+
+  <!-- Sparkles -->
+  <circle cx="20" cy="20" r="2.5" fill="white" opacity="0.9"/>
+  <line x1="20" y1="15" x2="20" y2="25" stroke="white" stroke-width="1" opacity="0.7"/>
+  <line x1="15" y1="20" x2="25" y2="20" stroke="white" stroke-width="1" opacity="0.7"/>
+
+  <circle cx="80" cy="18" r="1.8" fill="white" opacity="0.8"/>
+  <line x1="80" y1="14" x2="80" y2="22" stroke="white" stroke-width="0.8" opacity="0.6"/>
+  <line x1="76" y1="18" x2="84" y2="18" stroke="white" stroke-width="0.8" opacity="0.6"/>
+
+  <circle cx="88" cy="58" r="1.5" fill="white" opacity="0.7"/>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="bgBar1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a0d2e"/>
+      <stop offset="100%" stop-color="#0a0818"/>
+    </linearGradient>
+    <linearGradient id="goldBar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff7a0"/>
+      <stop offset="25%" stop-color="#f5d878"/>
+      <stop offset="50%" stop-color="#d4af37"/>
+      <stop offset="75%" stop-color="#b8930a"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <linearGradient id="goldFrame" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff0a0"/>
+      <stop offset="50%" stop-color="#d4af37"/>
+      <stop offset="100%" stop-color="#7a5c00"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="18" fill="url(#bgBar1)"/>
+  <rect x="4" y="4" width="192" height="192" rx="15" fill="none" stroke="url(#goldFrame)" stroke-width="3"/>
+  <!-- Single gold bar -->
+  <rect x="25" y="75" width="150" height="50" rx="10" fill="url(#goldBar)" stroke="#8b6914" stroke-width="2"/>
+  <rect x="30" y="80" width="140" height="18" rx="6" fill="#fff7a0" opacity="0.25"/>
+  <!-- BAR text -->
+  <text x="100" y="109" font-family="Georgia,serif" font-size="30" font-weight="900" text-anchor="middle" fill="#1a0d2e" letter-spacing="4">BAR</text>
+  <!-- Decorative lines -->
+  <line x1="25" y1="65" x2="175" y2="65" stroke="url(#goldFrame)" stroke-width="1.5" opacity="0.6"/>
+  <line x1="25" y1="135" x2="175" y2="135" stroke="url(#goldFrame)" stroke-width="1.5" opacity="0.6"/>
+  <!-- Corner diamonds -->
+  <polygon points="20,20 26,14 32,20 26,26" fill="#d4af37"/>
+  <polygon points="180,20 186,14 192,20 186,26" fill="#d4af37"/>
+  <polygon points="20,180 26,174 32,180 26,186" fill="#d4af37"/>
+  <polygon points="180,180 186,174 192,180 186,186" fill="#d4af37"/>
+</svg>

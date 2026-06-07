@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="bg7" cx="50%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#2a0a0a"/>
+      <stop offset="100%" stop-color="#0d0005"/>
+    </radialGradient>
+    <linearGradient id="ruby" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b6b"/>
+      <stop offset="40%" stop-color="#cc0000"/>
+      <stop offset="100%" stop-color="#7a0000"/>
+    </linearGradient>
+    <linearGradient id="gold7" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff7a0"/>
+      <stop offset="30%" stop-color="#d4af37"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <filter id="glow7">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="200" height="200" rx="18" fill="url(#bg7)"/>
+  <rect x="4" y="4" width="192" height="192" rx="15" fill="none" stroke="url(#gold7)" stroke-width="3"/>
+  <!-- Big 7 -->
+  <text x="100" y="155" font-family="Georgia,serif" font-size="145" font-weight="900" text-anchor="middle" fill="url(#ruby)" filter="url(#glow7)" stroke="#gold" stroke-width="2">7</text>
+  <text x="100" y="155" font-family="Georgia,serif" font-size="145" font-weight="900" text-anchor="middle" fill="none" stroke="url(#gold7)" stroke-width="2.5">7</text>
+  <!-- Sparkles -->
+  <circle cx="30" cy="30" r="4" fill="#fff7a0" opacity="0.9"/>
+  <circle cx="170" cy="25" r="3" fill="#fff7a0" opacity="0.8"/>
+  <circle cx="160" cy="170" r="4" fill="#fff7a0" opacity="0.7"/>
+  <circle cx="25" cy="165" r="3" fill="#fff7a0" opacity="0.9"/>
+  <line x1="30" y1="22" x2="30" y2="38" stroke="#fff7a0" stroke-width="1.5" opacity="0.8"/>
+  <line x1="22" y1="30" x2="38" y2="30" stroke="#fff7a0" stroke-width="1.5" opacity="0.8"/>
+  <line x1="170" y1="18" x2="170" y2="32" stroke="#fff7a0" stroke-width="1.2" opacity="0.7"/>
+  <line x1="163" y1="25" x2="177" y2="25" stroke="#fff7a0" stroke-width="1.2" opacity="0.7"/>
+</svg>

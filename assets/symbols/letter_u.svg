@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="goldU" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#fffde0"/>
+      <stop offset="20%"  stop-color="#f5d878"/>
+      <stop offset="50%"  stop-color="#d4af37"/>
+      <stop offset="80%"  stop-color="#a07820"/>
+      <stop offset="100%" stop-color="#6b4f10"/>
+    </linearGradient>
+    <linearGradient id="borderU" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#fff7a0"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <filter id="shadowU" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.8"/>
+    </filter>
+    <filter id="glowU" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Dark background with gold border -->
+  <rect x="1" y="1" width="98" height="98" rx="10" fill="#0d0800" stroke="url(#borderU)" stroke-width="4"/>
+  <!-- Inner glow ring -->
+  <rect x="5" y="5" width="90" height="90" rx="7" fill="none" stroke="rgba(212,175,55,0.3)" stroke-width="1.5"/>
+  <!-- Letter with gold gradient and outline -->
+  <text x="50" y="78"
+    font-family="Georgia,Times New Roman,serif"
+    font-size="82" font-weight="900"
+    text-anchor="middle"
+    fill="url(#goldU)"
+    stroke="#3a2a00" stroke-width="4"
+    filter="url(#shadowU)">U</text>
+  <!-- Gold shine overlay -->
+  <text x="50" y="78"
+    font-family="Georgia,Times New Roman,serif"
+    font-size="82" font-weight="900"
+    text-anchor="middle"
+    fill="url(#goldU)"
+    filter="url(#glowU)">U</text>
+  <!-- Sparkle dots -->
+  <circle cx="15" cy="15" r="3" fill="#fffde0" opacity="0.9"/>
+  <circle cx="85" cy="15" r="3" fill="#fffde0" opacity="0.9"/>
+  <circle cx="15" cy="85" r="2" fill="#f5d878" opacity="0.7"/>
+  <circle cx="85" cy="85" r="2" fill="#f5d878" opacity="0.7"/>
+  <circle cx="50" cy="8"  r="2" fill="#fff7a0" opacity="0.8"/>
+</svg>

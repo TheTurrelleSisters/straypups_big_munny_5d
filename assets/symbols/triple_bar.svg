@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="bgBar3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a0d2e"/>
+      <stop offset="100%" stop-color="#0a0818"/>
+    </linearGradient>
+    <linearGradient id="goldBar3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff7a0"/>
+      <stop offset="30%" stop-color="#f5d878"/>
+      <stop offset="60%" stop-color="#d4af37"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <linearGradient id="goldFrame3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff0a0"/>
+      <stop offset="50%" stop-color="#d4af37"/>
+      <stop offset="100%" stop-color="#7a5c00"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="18" fill="url(#bgBar3)"/>
+  <rect x="4" y="4" width="192" height="192" rx="15" fill="none" stroke="url(#goldFrame3)" stroke-width="3"/>
+  <!-- Three bars -->
+  <rect x="25" y="35" width="150" height="30" rx="7" fill="url(#goldBar3)" stroke="#8b6914" stroke-width="1.5"/>
+  <rect x="30" y="39" width="140" height="10" rx="4" fill="#fff7a0" opacity="0.2"/>
+  <text x="100" y="57" font-family="Georgia,serif" font-size="18" font-weight="900" text-anchor="middle" fill="#1a0d2e" letter-spacing="3">BAR</text>
+
+  <rect x="25" y="85" width="150" height="30" rx="7" fill="url(#goldBar3)" stroke="#8b6914" stroke-width="1.5"/>
+  <rect x="30" y="89" width="140" height="10" rx="4" fill="#fff7a0" opacity="0.2"/>
+  <text x="100" y="107" font-family="Georgia,serif" font-size="18" font-weight="900" text-anchor="middle" fill="#1a0d2e" letter-spacing="3">BAR</text>
+
+  <rect x="25" y="135" width="150" height="30" rx="7" fill="url(#goldBar3)" stroke="#8b6914" stroke-width="1.5"/>
+  <rect x="30" y="139" width="140" height="10" rx="4" fill="#fff7a0" opacity="0.2"/>
+  <text x="100" y="157" font-family="Georgia,serif" font-size="18" font-weight="900" text-anchor="middle" fill="#1a0d2e" letter-spacing="3">BAR</text>
+  <!-- Corner diamonds -->
+  <polygon points="14,14 19,9 24,14 19,19" fill="#d4af37"/>
+  <polygon points="176,14 181,9 186,14 181,19" fill="#d4af37"/>
+  <polygon points="14,186 19,181 24,186 19,191" fill="#d4af37"/>
+  <polygon points="176,186 181,181 186,186 181,191" fill="#d4af37"/>
+</svg>

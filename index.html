@@ -2,144 +2,1376 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+  <!-- CACHE BUST: Clear ALL old cache API entries on page load.
+       The service worker's activate handler is the authoritative keeper of the current cache.
+       This inline block simply nukes everything — the SW will rebuild the correct cache.
+       NEVER hardcode a specific cache name here. CACHE_NAME lives in service-worker.js ONLY. -->
+  <script>
+    // ── GAME VERSION — single source of truth in index.html ───────────────
+    // MANDATORY RULE: Update GAME_VERSION on every build alongside CACHE_NAME.
+    // This is displayed on the splash screen and used for cache validation.
+    // Never deliver a zip with a stale GAME_VERSION.
+    var GAME_VERSION = 'v8.1.58';
+
+    // ── SPIN LOCK SAFETY NET ──────────────────────────────────────────
+    // If executeSpin() throws an uncaught promise rejection, spinInProgress
+    // would stay true forever — locking the game. This handler rescues it.
+    window.addEventListener('unhandledrejection', function(e) {
+      console.error('[Game] Unhandled rejection:', e.reason);
+      if (typeof GameState !== 'undefined' && GameState.spinInProgress) {
+        GameState.spinInProgress = false;
+        GameState.activeBonus    = null;
+        if (typeof UI !== 'undefined') {
+          UI.setControlsEnabled(true);
+          UI.showToast('Error occurred — please spin again');
+        }
+        console.warn('[Game] spinInProgress rescued by global error handler');
+      }
+    });
+
+    (function() {
+      // 1. Delete ALL cache API entries so SW always re-fetches on version change
+      //    Never touch localStorage — game state lives there
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          names.forEach(function(name) { caches.delete(name); });
+        });
+      }
+
+      // 2. Version-aware hard reload: if the SW is serving a different version,
+      //    force a full reload so the player never runs stale cached code.
+      //    Compares the version cookie to GAME_VERSION; reloads once if mismatch.
+      try {
+        var storedVer = sessionStorage.getItem('__turrelle_ver');
+        if (storedVer && storedVer !== GAME_VERSION) {
+          sessionStorage.setItem('__turrelle_ver', GAME_VERSION);
+          // Hard reload bypasses SW cache
+          window.location.reload(true);
+        } else {
+          sessionStorage.setItem('__turrelle_ver', GAME_VERSION);
+        }
+      } catch(e) {}
+
+      // 3. Force SW update check on every page load (not just first)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(function(reg) {
+          if (reg) reg.update();
+        });
+      }
+    })();
+  </script>
+  <script>
+    // Inject GAME_VERSION into the splash badge as soon as DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      var badge = document.getElementById('splash-version');
+      if (badge) badge.textContent = GAME_VERSION;
+    });
+  </script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
-<title>StrayPups Big Munny $5 v5.28</title>
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<!-- iOS PWA -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#08000f">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+<meta name="apple-mobile-web-app-title" content="Big Munny">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<!-- Android -->
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="StrayPups $5">
-<link rel="stylesheet" href="css/styles.css?v=5.28">
+<meta name="theme-color" content="#d4af37">
+<meta name="description" content="The Turrelle Sisters Big Munny Slot Machine">
+<meta name="format-detection" content="telephone=no">
+<title>The Turrelle Sisters Big Munny</title>
+<link rel="icon" href="assets/icons/icon-96x96.png">
+<link rel="stylesheet" href="style.css?v=8.1.58">
+<style>
+/* ── INSERT CASH TO PLAY — reel overlay msg ── */
+#reels-insert-msg {
+  position:absolute;
+  bottom:8px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.78);
+  color:#f5d878;
+  font-family:var(--font-display);
+  font-size:12px;letter-spacing:2px;
+  padding:5px 14px;border-radius:20px;
+  border:1px solid rgba(212,175,55,0.5);
+  white-space:nowrap;
+  opacity:0;transition:opacity 0.4s;
+  pointer-events:none;z-index:10;
+}
+#reels-insert-msg.visible { opacity:1; }
+
+/* Exit button */
+#exit-btn {
+  background:none;border:1.5px solid var(--ruby);
+  color:var(--ruby);border-radius:8px;
+  padding:7px 10px;font-size:11px;cursor:pointer;font-weight:700;
+}
+
+/* Jackpot sisters image — hidden by default, shown via .active class in style.css */
+#jackpot-overlay { display:none; }
+
+/* Chrome real viewport height fix */
+#game-wrap { height: var(--real-vh, 100vh); max-height: var(--real-vh, 100vh); }
+html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+* { -webkit-touch-callout: none; }
+/* ── SPLASH SCREEN ── */
+#splash-screen{
+  position:fixed;inset:0;z-index:1000;
+  background:#0a0608;
+  display:flex;flex-direction:column;
+  align-items:stretch;justify-content:flex-start;
+  transition:opacity 0.7s ease;
+  overflow:hidden;
+}
+#splash-screen.fade-out{opacity:0;pointer-events:none;}
+#splash-screen.hidden{display:none;}
+
+/* MANDATORY: version badge bottom-right of splash — update GAME_VERSION every build */
+#splash-version {
+  position:absolute;bottom:10px;right:12px;
+  font-family:'Courier New',monospace;font-size:11px;font-weight:700;
+  color:rgba(245,197,24,0.9);background:rgba(0,0,0,0.6);
+  border:1px solid rgba(245,197,24,0.35);border-radius:4px;
+  padding:2px 7px;letter-spacing:1px;pointer-events:none;z-index:10;
+  text-shadow:0 0 6px rgba(245,197,24,0.5);
+}
+
+#splash-img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center top;
+  -webkit-animation:splashPop 0.6s cubic-bezier(0.22,1,0.36,1) forwards;
+  animation:splashPop 0.6s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+@-webkit-keyframes splashPop{
+  0%  {-webkit-transform:scale(0.88);opacity:0;}
+  100%{-webkit-transform:scale(1);opacity:1;}
+}
+@keyframes splashPop{
+  0%  {transform:scale(0.88);opacity:0;}
+  100%{transform:scale(1);opacity:1;}
+}
+
+#splash-glow{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at center,rgba(212,175,55,0.08) 0%,transparent 70%);
+  -webkit-animation:splashGlow 2s ease-in-out infinite alternate;
+  animation:splashGlow 2s ease-in-out infinite alternate;
+  pointer-events:none;
+}
+@-webkit-keyframes splashGlow{0%{opacity:0.5;}100%{opacity:1;}}
+@keyframes splashGlow{0%{opacity:0.5;}100%{opacity:1;}}
+
+#splash-tap {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: #d4af37;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(212,175,55,0.9), 0 0 24px rgba(212,175,55,0.5);
+  -webkit-animation: splashTapBlink 1.1s ease-in-out infinite;
+  animation: splashTapBlink 1.1s ease-in-out infinite;
+  white-space: nowrap;
+  pointer-events: none;
+}
+@-webkit-keyframes splashTapBlink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+@keyframes splashTapBlink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+#splash-loading { display: none; } /* replaced by tap-to-play */
+
+#splash-particles{
+  position:absolute;inset:0;pointer-events:none;overflow:hidden;
+}
+.sp{
+  position:absolute;
+  width:4px;height:4px;
+  border-radius:50%;
+  background:var(--gold-light);
+  -webkit-animation:spFloat linear infinite;
+  animation:spFloat linear infinite;
+  opacity:0;
+}
+@-webkit-keyframes spFloat{
+  0%  {-webkit-transform:translateY(100vh) scale(0);opacity:0;}
+  10% {opacity:0.8;}
+  90% {opacity:0.4;}
+  100%{-webkit-transform:translateY(-20vh) scale(1.5);opacity:0;}
+}
+@keyframes spFloat{
+  0%  {transform:translateY(100vh) scale(0);opacity:0;}
+  10% {opacity:0.8;}
+  90% {opacity:0.4;}
+  100%{transform:translateY(-20vh) scale(1.5);opacity:0;}
+}
+
+/* PWA install prompt */
+#install-prompt{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a0d2e,#2a1a3e);border:2px solid #d4af37;border-radius:14px;padding:12px 18px;display:none;align-items:center;gap:10px;z-index:300;box-shadow:0 4px 20px rgba(0,0,0,0.8);max-width:90vw;}
+#install-prompt.show{display:flex;}
+#install-prompt img{width:38px;height:38px;border-radius:8px;}
+#install-prompt-text{color:#f5e6c8;font-size:11px;}
+#install-prompt-text strong{color:#d4af37;display:block;font-size:13px;}
+#install-yes{background:#d4af37;color:#0a0608;border:none;border-radius:8px;padding:7px 12px;font-weight:900;cursor:pointer;font-size:12px;}
+#install-no{background:none;border:none;color:#8a7a5a;cursor:pointer;font-size:18px;padding:4px;}
+#update-banner{position:fixed;top:0;left:0;right:0;background:#d4af37;color:#0a0608;padding:8px;text-align:center;font-weight:900;font-size:13px;z-index:400;display:none;cursor:pointer;}
+#update-banner.show{display:block;}
+
+/* ── LOBBY PROMO BANNER ── */
+#lobby-promo {
+  position:fixed;bottom:0;left:0;right:0;z-index:800;
+  background:linear-gradient(135deg,#0f0020,#1e003a,#0f0020);
+  border-top:2px solid #ffd700;
+  padding:8px 12px 8px;
+  display:flex;align-items:center;justify-content:space-between;
+  transform:translateY(100%);transition:transform .5s cubic-bezier(.25,.46,.45,.94);
+  box-shadow:0 -4px 20px rgba(255,215,0,.25);
+  gap:8px;font-family:'Arial Black',Arial,sans-serif;
+}
+#lobby-promo.show{transform:translateY(0);}
+#lp-icon{font-size:22px;flex-shrink:0;}
+#lp-text{flex:1;min-width:0;}
+#lp-title{font-size:11px;color:#ffd700;font-weight:900;letter-spacing:1px;}
+#lp-sub{font-size:9px;color:#886699;font-family:Arial,sans-serif;font-weight:normal;}
+#lp-btn{flex-shrink:0;padding:7px 12px;border-radius:8px;border:none;
+  background:linear-gradient(135deg,#5a3800,#b8860b);
+  color:#ffd700;font-size:10px;font-weight:900;letter-spacing:1px;
+  cursor:pointer;text-transform:uppercase;text-decoration:none;display:block;}
+#lp-close{flex-shrink:0;width:22px;height:22px;border-radius:50%;
+  border:1px solid #444;background:rgba(0,0,0,.6);color:#666;
+  font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+
+
+/* ── ATTITUDE CHECK ── */
+#attitude-check{position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.92);
+  display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;padding:20px;}
+#attitude-check.show{display:flex;}
+#ac-title{font-size:clamp(24px,8vw,36px);font-weight:900;color:#ffd700;
+  text-shadow:0 0 16px #ff6600;text-align:center;line-height:1.2;
+  animation:ac-pulse 1s ease-in-out infinite;}
+@keyframes ac-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+#ac-amt{font-size:clamp(28px,9vw,44px);font-weight:900;color:#ffdd00;
+  text-shadow:0 0 20px #ff4400;}
+#ac-msg{font-size:11px;color:#886699;text-align:center;line-height:1.6;
+  font-family:Arial,sans-serif;font-weight:normal;}
+#ac-dismiss{padding:12px 32px;border-radius:10px;border:none;
+  background:linear-gradient(135deg,#3a006a,#8800cc);
+  color:#fff;font-size:13px;font-weight:900;letter-spacing:2px;cursor:pointer;}
+
+#force-win-cel.show{display:flex;}
+
+
+
+
+
+
+/* ── PROGRESSIVE JACKPOT CELEBRATION OVERLAY ── */
+#force-win-cel {
+  position: fixed; inset: 0; z-index: 9600;
+  background: rgba(0,0,0,.96);
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px; padding: 20px;
+}
+#force-win-cel.show { display: flex; }
+#fw-video {
+  width: 100%;
+  max-width: 320px;
+  max-height: 50vh;
+  object-fit: contain;
+  border-radius: 12px;
+  display: block;
+  /* muted + playsinline set in HTML — auto-plays on all browsers */
+}
+#fw-title {
+  font-size: clamp(20px, 6vw, 28px); font-weight: 900;
+  color: #ffd700; text-shadow: 0 0 16px #ff6600;
+  letter-spacing: 2px; text-align: center;
+  animation: fw-pulse 1s ease-in-out infinite;
+}
+@keyframes fw-pulse {
+  0%,100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+#fw-amt {
+  font-size: clamp(32px, 10vw, 48px); font-weight: 900;
+  color: #ffdd00; text-shadow: 0 0 20px #ff4400;
+  letter-spacing: 2px;
+}
+#fw-dismiss {
+  padding: 13px 32px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, #5a3800, #b8860b);
+  color: #ffd700; font-size: 13px; font-weight: 900;
+  letter-spacing: 2px; cursor: pointer; text-transform: uppercase;
+  font-family: inherit;
+}
+#fw-dismiss:active { transform: scale(.95); }
+
+
+/* ── OPERATOR BROADCAST MESSAGE ── */
+#op-message-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 8000;
+  background: linear-gradient(135deg, #0f0020, #1e0035, #0f0020);
+  border-bottom: 2px solid #ffd700;
+  padding: 10px 14px;
+  display: flex; align-items: flex-start; gap: 10px;
+  transform: translateY(-100%);
+  transition: transform .5s cubic-bezier(.25,.46,.45,.94);
+  box-shadow: 0 4px 20px rgba(255,215,0,.25);
+}
+#op-message-banner.show { transform: translateY(0); }
+#op-msg-icon { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+#op-msg-body { flex: 1; min-width: 0; }
+#op-msg-from { font-size: 8px; color: #ffd700; letter-spacing: 2px;
+  text-transform: uppercase; margin-bottom: 3px; font-family: Arial Black, Arial, sans-serif; }
+#op-msg-text { font-size: 12px; color: #f0e0ff; line-height: 1.4;
+  font-family: Arial, sans-serif; font-weight: normal; word-break: break-word; }
+#op-msg-close {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid #444; background: rgba(0,0,0,.5);
+  color: #888; font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: Arial, sans-serif;
+}
+
+</style>
 </head>
-<body>
-<div id="asset-store">
-  <img id="img-scott" src="assets/scott_full.png" alt="" hidden>
-  <img id="img-splash" src="assets/splash.jpg" alt="" hidden>
-  <img id="img-banner" src="assets/banner.jpg" alt="" hidden>
-  <audio id="snd-credits" src="assets/credits_addup.wav"></audio>
-  <audio id="snd-redspin" src="assets/red_spin_music.mp3"></audio>
-  <audio id="snd-ring" src="assets/ring1.mp3"></audio>
-  <audio id="snd-welcome" src="assets/splash_welcome.wav"></audio>
-</div><div id="splash">
-  <div id="splash-bg"></div>
-  <div id="splash-foot">
-    <div id="splash-title">STRAYPUPS BIG MUNNY</div>
-    <div id="splash-ver">$5 &bull; v5.28</div>
-    <div id="splash-bar"><div id="splash-bar-fill"></div></div>
-    <div id="splash-tap">TAP TO PLAY</div>
+<body class="desktop-gutter-c">
+
+<!-- ── SPLASH SCREEN ── -->
+<div id="splash-screen">
+  <div id="splash-glow"></div>
+  <div id="splash-particles"></div>
+  <img id="splash-img" src="assets/splash_screen.jpg" alt="The Turrelle Sisters Big Munny">
+  <div id="splash-tap">TAP TO PLAY</div>
+  <!-- MANDATORY: version badge — always visible on splash, updated every build -->
+  <div id="splash-version"></div>
+</div>
+
+<div id="install-prompt">
+  <img src="assets/icons/icon-96x96.png" alt="">
+  <div id="install-prompt-text"><strong>Install Big Munny</strong>Play offline, launch like an app!</div>
+  <button id="install-yes">Install</button>
+  <button id="install-no">✕</button>
+</div>
+<div id="update-banner" onclick="location.reload()">🔄 Update available — tap to refresh</div>
+
+<div id="game-wrap">
+  <!-- TITLE — at very top — tap 5× for operator -->
+  <div id="game-title">
+    <img id="title-banner" src="assets/TSistsersBigMunnyTitle.png" alt="The Turrelle Sisters Big Munny">
+  </div>
+
+  <!-- JACKPOT METERS — just above reels -->
+  <div id="jackpot-bar">
+    <div class="jp-meter jp-prog-tile" id="jp-progressive"><div class="jp-label">PROG</div><div class="jp-amount" id="ts-prog-val">$500.00</div></div>
+    <div class="jp-meter" id="jp-grand"><div class="jp-label">GRAND</div><div class="jp-amount">$2000.00</div></div>
+    <div class="jp-meter" id="jp-major"><div class="jp-label">MAJOR</div><div class="jp-amount">$100.00</div></div>
+    <div class="jp-meter" id="jp-minor"><div class="jp-label">MINOR</div><div class="jp-amount">$50.00</div></div>
+    <div class="jp-meter" id="jp-mini"><div class="jp-label">MINI</div><div class="jp-amount">$25.00</div></div>
+  </div>
+
+  <!-- REEL SECTION -->
+  <div id="reel-section">
+    <div id="reel-frame">
+      <div id="red-reel-overlay"></div>
+      <div id="reels-insert-msg">💳 INSERT CASH TO PLAY</div>
+      <canvas id="payline-canvas"></canvas>
+      <div id="reels">
+        <div class="reel" id="reel-0"><div class="reel-strip"><div class="symbol-cell" id="sc-0-0"></div><div class="symbol-cell" id="sc-0-1"></div><div class="symbol-cell" id="sc-0-2"></div></div></div>
+        <div class="reel" id="reel-1"><div class="reel-strip"><div class="symbol-cell" id="sc-1-0"></div><div class="symbol-cell" id="sc-1-1"></div><div class="symbol-cell" id="sc-1-2"></div></div></div>
+        <div class="reel" id="reel-2"><div class="reel-strip"><div class="symbol-cell" id="sc-2-0"></div><div class="symbol-cell" id="sc-2-1"></div><div class="symbol-cell" id="sc-2-2"></div></div></div>
+        <div class="reel" id="reel-3"><div class="reel-strip"><div class="symbol-cell" id="sc-3-0"></div><div class="symbol-cell" id="sc-3-1"></div><div class="symbol-cell" id="sc-3-2"></div></div></div>
+        <div class="reel" id="reel-4"><div class="reel-strip"><div class="symbol-cell" id="sc-4-0"></div><div class="symbol-cell" id="sc-4-1"></div><div class="symbol-cell" id="sc-4-2"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WIN DISPLAY -->
+  <div id="win-section">
+    <div id="win-box"><div id="win-label">WIN</div><div id="win-amount">$0.00</div></div>
+    <div id="bonus-total-box"><div id="bonus-total-label">🔴 BONUS TOTAL</div><div id="bonus-total-amount">$0.00</div></div>
+  </div>
+  <div id="win-line-label"></div>
+
+  <!-- VOLUME BAR REMOVED v7.0.6 — volume controls removed per owner; level fixed at 50% in audio.js -->
+
+  <!-- INFO BAR -->
+  <div id="info-bar">
+    <div class="info-item"><div class="info-label">BALANCE</div><div class="info-value" id="balance-val">$500.00</div></div>
+    <div class="info-item"><div class="info-label">TOTAL BET</div><div class="info-value" id="total-bet-val">$2.50</div></div>
+    <div class="info-item"><div class="info-label">LINES</div><div class="info-value" id="lines-display">5</div></div>
+  </div>
+  <!-- CONTROLS — MLMC BIG MUNNY style -->
+  <!-- CONTROLS — v8.1.0 redesign: SPIN circle, rect buttons, denom square, HELP btn -->
+  <div id="controls">
+
+    <!-- Row 1: Bet stats + denom square + HELP -->
+    <div id="bet-stats-row">
+      <div id="bet-stats-left">
+        <div class="bet-stat"><span class="bet-label">LINES</span><span id="lines-display2">5</span></div>
+        <div class="bet-stat"><span class="bet-label">BET/LINE</span><span id="credits-line-display">$0.50</span></div>
+        <div class="bet-stat"><span class="bet-label">TOTAL BET</span><span id="total-bet-display2">$2.50</span></div>
+      </div>
+      <div id="bet-stats-right">
+        <!-- Denom square — taps open dropdown -->
+        <div id="denom-selector">
+          <button id="denom-display-btn" class="denom-sq">5¢ ▾</button>
+          <div id="denom-dropdown">
+            <button class="denom-option" data-denom="0.01">1¢</button>
+            <button class="denom-option" data-denom="0.02">2¢</button>
+            <button class="denom-option active" data-denom="0.05">5¢</button>
+            <button class="denom-option" data-denom="0.10">10¢</button>
+            <button class="denom-option" data-denom="0.25">25¢</button>
+            <button class="denom-option" data-denom="0.50">50¢</button>
+          </div>
+        </div>
+        <button id="help-btn" class="ctrl-rect ctrl-rect-help">HELP</button>
+      </div>
+    </div>
+
+    <!-- Row 2: Main controls — SELECT LINES | SPIN circle | BET MAX -->
+    <div id="main-controls">
+      <button id="bet-one-btn" class="ctrl-rect">SELECT<br>LINES</button>
+      <button id="spin-btn" class="spin-circle" aria-label="Spin">SPIN</button>
+      <button id="bet-max-btn" class="ctrl-rect">BET<br>MAX</button>
+    </div>
+
+    <!-- Row 3: Action buttons — CASH OUT | INSERT CASH | EXIT -->
+    <div id="action-row">
+      <button id="cashout-btn" class="action-btn action-btn-cashout">💵 CASH OUT</button>
+      <button id="insertcash-btn" class="action-btn action-btn-insert">💳 INSERT CASH</button>
+      <button id="exit-btn" class="action-btn action-btn-exit">✕ EXIT</button>
+    </div>
+  </div>
+
+  <!-- Zero balance flash message -->
+  <div id="zero-balance-msg" style="
+    position:absolute;bottom:70px;left:50%;transform:translateX(-50%);
+    background:rgba(180,0,40,0.92);color:#fff;font-family:var(--font-display);
+    font-size:12px;letter-spacing:2px;padding:7px 18px;border-radius:20px;
+    border:1px solid rgba(255,80,80,0.6);white-space:nowrap;
+    opacity:0;transition:opacity 0.4s;pointer-events:none;z-index:10;
+  ">💳 INSERT CASH TO PLAY</div>
+</div>
+
+<!-- BONUS SCREENS -->
+
+
+<div id="pick-screen">
+  <div class="bonus-jp-bar" id="pick-jp-bar">
+    <div class="bonus-jp-meter grand"><div class="bonus-jp-label">GRAND</div><div class="bonus-jp-amount" id="pick-jp-grand">$2000.00</div></div>
+    <div class="bonus-jp-meter major"><div class="bonus-jp-label">MAJOR</div><div class="bonus-jp-amount" id="pick-jp-major">$100.00</div></div>
+    <div class="bonus-jp-meter minor"><div class="bonus-jp-label">MINOR</div><div class="bonus-jp-amount" id="pick-jp-minor">$50.00</div></div>
+    <div class="bonus-jp-meter mini"><div class="bonus-jp-label">MINI</div><div class="bonus-jp-amount" id="pick-jp-mini">$25.00</div></div>
+  </div>
+  <div id="pick-title">💄 PICK &amp; CHOOSE 💄</div>
+  <div id="pick-subtitle">Tap tiles — match 3 to win!</div>
+  <div id="pick-grid"></div>
+  <div id="pick-matches">Match 3 symbols to win!</div>
+</div>
+
+<div id="jackpot-overlay">
+  <!-- v8.1.0: Character region — flex layout prevents clipping -->
+  <div id="jackpot-char-row">
+    <img id="jackpot-char-left"  src="" alt="" style="display:none;">
+    <img id="jackpot-char-right" src="" alt="" style="display:none;">
+  </div>
+  <div id="jackpot-type-text">JACKPOT!</div>
+  <div id="jackpot-amount-text">$0.00</div>
+  <div id="jackpot-context-text"></div>
+  <div id="jackpot-tap-hint">TAP TO CONTINUE</div>
+  <div id="jackpot-actions" style="display:none;flex-direction:column;gap:12px;margin-top:16px;width:100%;max-width:280px;">
+    <button id="jackpot-cashout-btn">💵 CASH OUT VOUCHER</button>
+    <button id="jackpot-continue-btn">▶ CONTINUE PLAYING</button>
   </div>
 </div>
 
-<div id="app">
-  <div id="hdr-img"><img id="hdr-img-el" src="" alt="StrayPups Big Munny"></div>
+<!-- OPERATOR -->
+<div id="pin-overlay">
+  <div id="pin-box">
+    <div id="pin-title">OPERATOR ACCESS</div>
+    <div id="pin-subtitle">Enter 4-digit PIN</div>
+    <div id="pin-display"></div>
+    <div id="pin-grid">
+      <button class="pin-key" data-val="1">1</button><button class="pin-key" data-val="2">2</button><button class="pin-key" data-val="3">3</button>
+      <button class="pin-key" data-val="4">4</button><button class="pin-key" data-val="5">5</button><button class="pin-key" data-val="6">6</button>
+      <button class="pin-key" data-val="7">7</button><button class="pin-key" data-val="8">8</button><button class="pin-key" data-val="9">9</button>
+      <button class="pin-key" id="pin-clear" data-val="clear">CLR</button>
+      <button class="pin-key" data-val="0">0</button>
+      <button class="pin-key" id="pin-enter" data-val="enter">OK</button>
+    </div>
+    <div id="pin-error"></div>
+  </div>
+</div>
+<div id="op-overlay"><div id="op-panel"></div></div>
 
-  <!-- BINGO SECTION: pattern name + card + ball strip -->
-  <div id="bingo-section">
-    <div id="bingo-pattern-name">&nbsp;</div>
-    <div id="bingo-card-area">
-      <div id="bingo-card-wrap">
-        <div id="bingo-col-hdrs">
-          <div class="bcol-hdr">B</div><div class="bcol-hdr">I</div>
-          <div class="bcol-hdr">N</div><div class="bcol-hdr">G</div><div class="bcol-hdr">O</div>
-        </div>
-        <div id="bingo-grid"></div>
+<div id="log-screen">
+  <div id="log-header">
+    <span style="font-family:Georgia,serif;color:var(--gold);font-size:16px">📋 EVENT LOG</span>
+    <button id="log-close" style="background:none;border:1.5px solid var(--ruby);color:var(--ruby);padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:700">✕</button>
+  </div>
+  <div id="log-tabs">
+    <button class="log-tab active" data-tab="games">LAST 10 GAMES</button>
+    <button class="log-tab" data-tab="events">FULL LOG</button>
+  </div>
+  <div id="log-content"></div>
+  <div id="log-footer">
+    <button class="op-btn" onclick="exportLogAsCSV()">CSV</button>
+    <button class="op-btn" onclick="exportLogAsJSON()">JSON</button>
+    <button class="op-btn danger" onclick="if(confirm('Clear log?')){GameState.eventLog.allEvents=[];GameState.eventLog.games=[];saveState();Operator.showLog('games');}">CLEAR</button>
+  </div>
+</div>
+
+<!-- VOUCHER MODAL -->
+<div id="voucher-modal">
+  <div id="voucher-card">
+    <div id="vc-header">
+      <div id="vc-logo">🎰</div>
+      <div id="vm-casino">Lucky Bitches Casino</div>
+      <div id="vc-tagline">TICKET VOUCHER</div>
+    </div>
+    <div id="vc-body">
+      <div id="vc-thankyou">Thank You For Playing!</div>
+      <div id="vc-amount-label">CREDIT VALUE</div>
+      <div id="vm-amount">$0.00</div>
+      <div id="vm-barcode"></div>
+      <div id="vc-meta">
+        <div>Voucher #: <span id="vm-id">LBC-XXXX-XXXX</span></div>
+        <div>Serial: <span id="vm-serial">---------</span></div>
+        <div>Issued: <span id="vm-issued">--</span></div>
       </div>
-      <!-- Ball strip BELOW card -->
-      <div id="ball-strip-area">
-        <div id="ball-strip-grid"></div>
-      </div>
+      <div id="vc-disclaimer">⚠️ NOT REDEEMABLE FOR REAL CASH<br>For entertainment purposes only</div>
+    </div>
+    <div id="vc-footer">
+      <button id="vm-print">✓ SAVE TO WALLET</button>
+      <button id="vm-close">✕ CLOSE</button>
     </div>
   </div>
+</div>
 
-  <!-- REEL SECTION â€” bigger -->
-  <div id="reel-section">
-    <div id="reel-frame">
-      <div id="red-ov"></div>
-      <div id="payline-mark"></div>
-      <div id="pl-left">PAYLINE</div>
-      <div id="pl-right">PAYLINE</div>
-      <div id="rs-badge">RED SPIN</div>
-      <div class="reel" id="r0"><div class="reel-window" id="rw0"><div class="reel-strip" id="rs0"></div></div></div>
-      <div class="reel" id="r1"><div class="reel-window" id="rw1"><div class="reel-strip" id="rs1"></div></div></div>
-      <div class="reel" id="r2"><div class="reel-window" id="rw2"><div class="reel-strip" id="rs2"></div></div></div>
+<!-- WALLET / INSERT CASH MODAL -->
+<div id="wallet-modal">
+  <div id="wallet-panel">
+    <div id="wallet-header">
+      <div id="wallet-title">💳 INSERT CASH</div>
+      <div id="wallet-subtitle">Select a voucher to play</div>
+    </div>
+    <div id="wallet-list"></div>
+    <div id="wallet-footer">
+      <button id="create-voucher-btn">➕ CREATE VOUCHER</button>
+      <button id="wallet-close">✕ CLOSE</button>
     </div>
   </div>
+</div>
 
-  <div id="prog-meter">
-    <div id="prog-meter-lbl">&#9733; PROGRESSIVE JACKPOT &#9733;</div>
-    <div id="prog-meter-val">$500.00</div>
-  </div>
-<div id="win-row">
-    <div class="wbox"><div class="wlbl">WIN</div><div class="wval" id="wval">$0.00</div></div>
-    <div id="bt-box"><div id="bt-lbl">BONUS TOTAL</div><div id="bt-val">$0.00</div></div>
-  </div>
-  <div id="win-msg"></div>
-  <div id="info-bar">
-    <div class="iitem"><div class="ilbl">BALANCE</div><div class="ival" id="bval">$100.00</div></div>
-    <div class="iitem"><div class="ilbl">BET</div><div class="ival" id="betval">$1.00</div></div>
-    <div class="iitem"><div class="ilbl">DENOM</div><div class="ival">$5</div></div>
-  </div>
-  <div id="controls">
-    <div id="ctrl-top">
-      <button class="cbtn" id="cred-btn">CREDITS: <span id="cdisp">1</span></button>
-      <button class="cbtn" id="spin-btn">SPIN</button>
-      <button class="cbtn" id="max-btn">BET MAX<br><span style="font-size:10px">3 CREDITS</span></button>
-    </div>
-    <div id="ctrl-btm">
-      <button class="abtn aco" id="co-btn">$$ CASH OUT</button>
-      <button class="abtn" id="help-btn" style="background:linear-gradient(135deg,#0d001a,#1a0035);border:1.5px solid var(--gold-dk);color:var(--gold-lt)">PAYS</button>
-      <button class="abtn aic" id="ic-btn">+ INSERT CASH</button>
+<!-- CREATE VOUCHER MODAL -->
+<div id="create-voucher-modal">
+  <div id="cv-panel">
+    <div id="cv-title">💳 CREATE VOUCHER</div>
+    <div id="cv-subtitle">Enter amount to add to wallet</div>
+    <input id="cv-amount-input" type="number" min="1" step="1" placeholder="Enter amount (e.g. 500)">
+    <div id="cv-error" style="display:none;color:#ff6060;font-size:11px;margin-top:4px;"></div>
+    <div id="cv-buttons">
+      <button id="cv-confirm">✓ CREATE</button>
+      <button id="cv-cancel">✕ CANCEL</button>
     </div>
   </div>
+</div>
+
+<!-- BONUS LETTER CELEBRATION (shows before orb screen) -->
+<div id="bonus-letter-celebrate" style="display:none;position:fixed;inset:0;z-index:120;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;gap:8px;">
+  <div class="bonus-cel-letter" data-letter="B">B</div>
+  <div class="bonus-cel-letter" data-letter="O">O</div>
+  <div class="bonus-cel-letter" data-letter="N">N</div>
+  <div class="bonus-cel-letter" data-letter="U">U</div>
+  <div class="bonus-cel-letter" data-letter="S">S</div>
+</div>
+
+<!-- BONUS FEATURE ORB SCREEN -->
+<div id="bonus-orb-screen" style="display:none;position:fixed;inset:0;z-index:115;background:radial-gradient(ellipse at center,#1a0d35 0%,#0a0608 100%);flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+  <div id="bonus-orb-header">
+    <div id="bonus-orb-title">B-O-N-U-S!</div>
+    <div id="bonus-orb-subtitle">TAP AN ORB TO REVEAL YOUR BONUS</div>
+  </div>
+  <div id="bonus-orb-container"></div>
+</div>
+
+<!-- HELP / PAYTABLE SCREEN — v8.1.0: 4-page layout (How to Play + 3 paytable pages) -->
+<div id="help-screen" class="help-screen">
+  <div id="help-panel" class="paytable-panel">
+    <div id="help-header" class="paytable-header">
+      <div id="help-title" class="paytable-title">❓ HELP</div>
+      <div id="help-denom-info" class="paytable-denom-info"></div>
+      <button id="help-close" aria-label="Close paytable">✕</button>
+    </div>
+    <!-- Page indicator and navigation -->
+    <div id="help-nav" class="paytable-nav">
+      <button id="help-prev" class="pt-nav-btn" aria-label="Previous page">&#8592;</button>
+      <div id="help-page-indicator" class="pt-page-indicator"><span id="help-page-cur">1</span> / <span id="help-page-total">4</span></div>
+      <button id="help-next" class="pt-nav-btn" aria-label="Next page">&#8594;</button>
+    </div>
+    <!-- Page containers -->
+    <div id="help-pages" class="paytable-pages">
+      <div id="help-page-1" class="pt-page active"></div>
+      <div id="help-page-2" class="pt-page"></div>
+      <div id="help-page-3" class="pt-page"></div>
+      <div id="help-page-4" class="pt-page"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ADDITIONAL RED SPINS BANNER -->
+<div id="additional-rs-banner" style="display:none;position:fixed;inset:0;z-index:125;background:rgba(180,0,0,0.85);align-items:center;justify-content:center;flex-direction:column;pointer-events:none;">
+  <div id="additional-rs-text">ADDITIONAL RED SPINS WON!</div>
+  <div id="additional-rs-sub">Get Ready...</div>
+  <div id="additional-rs-tap">Get Ready...</div>
 </div>
 
 <div id="toast"></div>
-<div id="jp-ov">
-  <div id="jp-burst"></div><div id="jp-big">JACKPOT!</div>
-  <div id="jp-sub">CONGRATULATIONS!</div><div id="jp-amt"></div>
-  <div id="jp-hint">TAP TO CONTINUE</div>
-</div>
-<div id="ic-ov">
-  <div class="ic-ttl">INSERT CASH</div>
-  <div class="ic-pre-row">
-    <button class="icpre" data-a="100">$100</button><button class="icpre" data-a="500">$500</button>
-    <button class="icpre" data-a="1000">$1,000</button><button class="icpre" data-a="5000">$5,000</button>
-  </div>
-  <div class="ic-row">
-    <span style="color:var(--gold);font-size:19px">$</span>
-    <input class="ic-inp" type="number" id="ic-inp" value="100" min="1" max="9999">
-    <button class="icbtn ok" id="ic-ok">ADD</button>
-    <button class="icbtn" id="ic-no">CANCEL</button>
-  </div>
-</div>
-<div id="help">
-  <div id="help-hdr"><div id="help-ttl">PAY TABLE</div><button id="help-close">CLOSE</button></div>
-  <div id="help-body"></div>
-</div>
+
+
+<!-- SCRIPTS — load order matters -->
+<script src="progressive.js?v=8.1.58p"></script>
+<script src="paytable.js?v=8.1.58"></script>
+<script src="state.js?v=8.1.58"></script>
+<script src="audio.js?v=8.1.58"></script>
+<script src="game.js?v=8.1.58"></script>
+<script src="bonuses.js?v=8.1.58"></script>
+<script src="ui.js?v=8.1.58"></script>
+<script src="operator.js?v=8.1.58"></script>
+<script src="cashout.js?v=8.1.58"></script>
 
 <script>
-  var PROG_GAME_ID = 'straypups_5d';
-  var PROG_DENOM   = 5.00;
-  // Register PWA service worker
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-      navigator.serviceWorker.register('service-worker.js').catch(function(e) {
-        console.warn('SW reg failed:', e);
+'use strict';
+
+// v8.1.4 ROOT-CAUSE FIX: history.pushState throws an uncaught SecurityError on
+// file:// protocol and some Android WebView / Samsung Browser configs. An uncaught
+// throw here halts ALL subsequent script execution — including game init — leaving
+// the reels blank. This wrapper makes every pushState call safe.
+function _safePushState() {
+  try {
+    history.pushState(null, '', window.location.href);
+  } catch (e) {
+    // pushState not allowed in this context (file://, sandboxed, etc.) — safe to ignore
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SPLASH SCREEN — TAP TO PLAY with welcome audio
+// Player taps anywhere on splash; audio plays on tap (iOS unlock),
+// then game transitions when audio ends (or after 6s failsafe).
+(function() {
+  var splash = document.getElementById('splash-screen');
+  if (!splash) return;
+
+  var dismissed = false;
+
+  var splashSnd = document.createElement('audio');
+  splashSnd.src = 'assets/audio/splash_welcome.wav';
+  splashSnd.preload = 'auto';
+  splashSnd.volume  = 0.85;
+  splashSnd.load();
+
+  function doFade() {
+    if (dismissed) return;
+    dismissed = true;
+    try {
+      if (typeof Audio !== 'undefined' && Audio.startAmbientMusic) {
+        setTimeout(function() { try { Audio.startAmbientMusic(); } catch(e) {} }, 500);
+      }
+    } catch(e) {}
+    splash.style.opacity       = '0';
+    splash.style.transition    = 'opacity 0.7s ease';
+    splash.style.pointerEvents = 'none';
+    setTimeout(function() { splash.style.display = 'none'; }, 750);
+  }
+
+  function onTap() {
+    if (dismissed) return;
+    // Remove listener so double-tap doesn't re-fire
+    splash.removeEventListener('touchend', onTap);
+    splash.removeEventListener('click',    onTap);
+
+    // Hard failsafe — always exits after 6 seconds even if audio stalls
+    var hardGuard = setTimeout(function() { doFade(); }, 6000);
+
+    try {
+      splashSnd.onended = function() { clearTimeout(hardGuard); doFade(); };
+      splashSnd.onerror = function() { clearTimeout(hardGuard); doFade(); };
+      splashSnd.currentTime = 0;
+      var p = splashSnd.play();
+      if (p && p.then) {
+        p.catch(function() { clearTimeout(hardGuard); doFade(); });
+      }
+    } catch(e) { clearTimeout(hardGuard); doFade(); }
+  }
+
+  splash.addEventListener('touchend', onTap, { passive: true });
+  splash.addEventListener('click',    onTap);
+  splash.style.cursor = 'pointer';
+})();
+
+// ── SERVICE WORKER — HTTPS/localhost only ────────────────────────────
+// HTTP local servers (192.168.x.x) skip this entirely — no errors
+// Only registers on HTTPS or localhost
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./service-worker.js').then(function(reg) {
+    reg.update();
+  }).catch(function() {});
+}
+
+// ── PWA INSTALL PROMPT (Android Chrome over HTTPS) ────────────────────
+var deferredInstall = null;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  deferredInstall = e;
+  setTimeout(function() {
+    if (deferredInstall) { var _ip=document.getElementById('install-prompt'); if(_ip) _ip.classList.add('show'); }
+  }, 20000);
+});
+var _iy=document.getElementById('install-yes'); if(_iy) _iy.addEventListener('click', function() {
+  var _ipr=document.getElementById('install-prompt'); if(_ipr) _ipr.classList.remove('show');
+  if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; }
+});
+var _in=document.getElementById('install-no'); if(_in) _in.addEventListener('click', function() {
+  var _ipr=document.getElementById('install-prompt'); if(_ipr) _ipr.classList.remove('show');
+  deferredInstall = null;
+});
+
+// ── CHROME / iOS HEIGHT FIX ───────────────────────────────────────────
+function setRealVH() {
+  // Use visualViewport when available (most accurate for Chrome with address bar)
+  var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--real-vh', h + 'px');
+}
+setRealVH();
+window.addEventListener('resize', setRealVH);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', setRealVH);
+window.addEventListener('orientationchange', function() { setTimeout(setRealVH, 100); setTimeout(setRealVH, 400); });
+
+// ── PREVENT SCROLL/BOUNCE — but NOT in scrollable areas ──────────────
+document.addEventListener('touchmove', function(e) {
+  var target = e.target;
+  // .closest() fallback for older Android
+  var el = target;
+  var scrollable = false;
+  while (el && el !== document.body) {
+    var id = el.id || '';
+    if (id === 'log-content' || id === 'op-panel' || id === 'op-overlay') {
+      scrollable = true; break;
+    }
+    el = el.parentElement;
+  }
+  if (!scrollable) e.preventDefault();
+}, { passive: false });
+
+// ── PREVENT CONTEXT MENU ──────────────────────────────────────────────
+document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+// ── NOTE: Double-tap zoom prevention REMOVED ──────────────────────────
+// It was blocking the 5-tap operator access sequence.
+// iOS zoom is prevented by maximum-scale=1.0 in the viewport meta tag instead.
+
+// ── ANDROID BACK BUTTON ───────────────────────────────────────────────
+_safePushState();
+window.addEventListener('popstate', function(e) {
+  // Check all overlays — back button closes whichever is open
+  // Operator panel check (no pushState needed — just check if open)
+  var opOverlay = document.getElementById('op-overlay');
+  if (opOverlay && opOverlay.classList.contains('active')) {
+    opOverlay.classList.remove('active');
+    if (typeof GameState !== 'undefined') GameState.operator.panelOpen = false;
+    _safePushState(); // Stay on page
+    return;
+  }
+  // Other overlays
+  var overlays = ['log-screen','pin-overlay','jackpot-overlay'];
+  for (var _pi = 0; _pi < overlays.length; _pi++) {
+    var el = document.getElementById(overlays[_pi]);
+    if (el && el.classList.contains('active')) {
+      el.classList.remove('active');
+      _safePushState();
+      return;
+    }
+  }
+  // Nothing open — prevent navigation away
+  _safePushState();
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// MAIN GAME INIT — MLMC BIG MUNNY style
+// ══════════════════════════════════════════════════════════════════════
+(function(){
+  function $(id) { return document.getElementById(id); }
+
+  // ── WAKE LOCK — prevent screen timeout during bonuses ─────────────
+  var _wakeLock = null;
+  var _wakeLockVideo = null;
+
+  function _acquireWakeLock() {
+    // v8.1.58: Try Screen Wake Lock API first (Chrome 84+, Samsung Browser 13+)
+    if (typeof navigator !== 'undefined' && navigator.wakeLock) {
+      navigator.wakeLock.request('screen').then(function(lock) {
+        _wakeLock = lock;
+        _wakeLock.addEventListener('release', function() { _wakeLock = null; });
+      }).catch(function() {
+        _acquireVideoFallback();
       });
+    } else {
+      _acquireVideoFallback();
+    }
+  }
+
+  function _acquireVideoFallback() {
+    // v8.1.58 FIX: Use a valid 1x1 looping MP4 (NoSleep.js approach).
+    // Previous 40-byte stub was not playable — video fallback was silently failing.
+    if (!_wakeLockVideo) {
+      _wakeLockVideo = document.createElement('video');
+      _wakeLockVideo.setAttribute('playsinline', '');
+      _wakeLockVideo.setAttribute('muted', '');
+      _wakeLockVideo.setAttribute('loop', '');
+      // Valid minimal 1x1 silent MP4 — keeps screen awake via video playback
+      _wakeLockVideo.src = 'data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJtcDQxaXNvbQAAAAhmcmVlAAAAG21kYXQAAAABAAAADkFWSUYAAAAAAAAAAAAAAAAAAABod3Rlcm0AAAAcbXZoZAAAAADAAAAAwAAAA+gAAAAAAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAABdHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAFAAAABQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPgAAAAAAABAAAAAAFMbWRpYQAAAABtZGhkAAAAAAAAAAAAAAAAAAD6YAAAAAAVhdsBAAAAADFoZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAQptaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAEObWRpYQAAAABnc3RibAAAAJ9zdHNkAAAAAAAAAAEAAACPYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAUABQAEgAAABIAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY//8AAAAxYXZjQwFkAAr/4QAYZ2QACqzZRoCAAAADAIAAAAGBkYt5YAAAAwAEAAAABg8YMZYAAAAAAAAAGHPYQAAAABzdHRzAAAAAAAAAAEAAAAeAAAD6AAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAAeAAAAAQAAAIhzdHN6AAAAAAAAAAAAAAAeAAAAaQAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAATAAAAEwAAABMAAAAUc3RjbwAAAAAAAAABAAAALAAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNTguNzYuMTAw';
+      _wakeLockVideo.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.001;top:0;left:0;pointer-events:none;z-index:-1;';
+      document.body.appendChild(_wakeLockVideo);
+    }
+    _wakeLockVideo.play().catch(function() {});
+  }
+
+  function _releaseWakeLock() {
+    if (_wakeLock) { _wakeLock.release().catch(function(){}); _wakeLock = null; }
+    if (_wakeLockVideo) { _wakeLockVideo.pause(); }
+  }
+
+  // v8.1.58: Expose wake lock globally so bonuses.js can acquire it during RS spins
+  window._gameAcquireWakeLock = _acquireWakeLock;
+
+  // Re-acquire on visibility change (wake lock released when tab hides)
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && (GameState.activeBonus || GameState.spinInProgress)) {
+      _acquireWakeLock();
+    }
+  });
+
+  // v8.1.58 FIX: Reduce re-acquisition interval from 15s → 3s.
+  // Red Spin bonus can run for minutes with no user interaction;
+  // OS may revoke the lock between the old 15s checks.
+  setInterval(function() {
+    if (typeof GameState !== 'undefined' && (GameState.activeBonus || GameState.spinInProgress)) {
+      _acquireWakeLock();
+    }
+  }, 3000);
+
+  // MLMC state
+  var denom          = DEFAULT_DENOM;           // current denomination
+  var creditsPerLine = (typeof DENOM_CREDIT_LOCK !== 'undefined' && DENOM_CREDIT_LOCK[denom])
+    ? DENOM_CREDIT_LOCK[denom]
+    : (GameState.lastCreditsPerLine || DEFAULT_CREDITS_PER_LINE); // v8.1.0: locked to denom on init
+  var lines          = DEFAULT_LINES;
+
+  // Load saved state
+  loadState();
+  if (!GameState.stats.sessionStart) GameState.stats.sessionStart = Date.now();
+  denom          = GameState.lastDenom          || DEFAULT_DENOM;
+  creditsPerLine = GameState.lastCreditsPerLine || DEFAULT_CREDITS_PER_LINE;
+  lines          = GameState.lastLines          || DEFAULT_LINES;
+
+  // Apply denom-correct jackpot seeds — scales current proportionally on denom change
+  // Owner confirmed: jackpot amounts must be correct for each denom, no cycling artifacts
+  var _lastDenomForJackpots = null;
+  function applyScaledJackpotSeeds(activeDenom, activeLines) {
+    if (typeof getJackpotSeedsForDenom === 'undefined') return;
+    // FIX-F (v8.1.11): lineScale removed. Seeds are absolute per-denom amounts from JACKPOT_SEEDS_BY_DENOM.
+    // Old: newSeed = baseSeeds[tier] * (activeLines/20) — at 5 lines (default) seeds were 25% of
+    // intended value, forcing must-hit-by caps to fire 4× too early. Jackpot seeds are not proportional
+    // to active lines in a real progressive system.
+    var baseSeeds = getJackpotSeedsForDenom(activeDenom);
+    var oldSeeds  = _lastDenomForJackpots ? getJackpotSeedsForDenom(_lastDenomForJackpots) : null;
+
+    Object.keys(baseSeeds).forEach(function(tier) {
+      if (!GameState.jackpots[tier]) return;
+      var newSeed = Math.max(baseSeeds[tier].seed || baseSeeds[tier], 1); // FIX-F: use full seed, no lineScale
+
+      if (oldSeeds && oldSeeds[tier] && (oldSeeds[tier].seed || oldSeeds[tier]) !== (baseSeeds[tier].seed || baseSeeds[tier])) {
+        // Denom changed — scale current proportionally to new denom
+        var oldSeedVal = oldSeeds[tier].seed || oldSeeds[tier];
+        var ratio = newSeed / Math.max(oldSeedVal, 1);
+        var scaledCurrent = Math.round(GameState.jackpots[tier].current * ratio);
+        // Clamp: must be at least the new seed, at most 3× the new seed (sanity cap)
+        GameState.jackpots[tier].current = Math.max(newSeed, Math.min(scaledCurrent, newSeed * 3));
+      } else {
+        // Same denom or first load — only raise if below seed, never lower a growing jackpot
+        if (GameState.jackpots[tier].current < newSeed) {
+          GameState.jackpots[tier].current = newSeed;
+        }
+      }
+      GameState.jackpots[tier].seed = newSeed;
+      // Update must-hit-by cap: use table cap if available, else seed × tier multiplier
+      var tableCap = baseSeeds[tier].cap;
+      if (tableCap) {
+        GameState.jackpots[tier].mustHitBy = tableCap;
+      } else {
+        var mhbMult = (typeof JACKPOT_MHB_MULTIPLIERS !== 'undefined') ? (JACKPOT_MHB_MULTIPLIERS[tier] || 4) : 4;
+        GameState.jackpots[tier].mustHitBy = Math.round(newSeed * mhbMult);
+      }
+    });
+    _lastDenomForJackpots = activeDenom;
+  }
+
+  if (typeof getJackpotSeedsForDenom !== 'undefined') {
+    applyScaledJackpotSeeds(denom, lines);
+  }
+
+  // ── SCREEN WAKE LOCK — see first implementation above (_acquireWakeLock / _releaseWakeLock) ──
+  // BUG-V4 FIX (v8.1.8): Duplicate _wakeLock var + requestWakeLock/releaseWakeLock block removed.
+  // The first implementation (lines above, using _acquireWakeLock/_releaseWakeLock with video fallback)
+  // is the active one — it is called by doSpin() and the 15s setInterval safety net.
+  // The duplicate declaration was resetting _wakeLock to null mid-IIFE, breaking the first implementation.
+  // If balance is $0 and there are no redeemable vouchers, restore starting credits.
+  // This prevents the game from being permanently stuck in an unplayable state.
+  if (GameState.balance <= 0) {
+    var voucherList = CashOut.loadVouchers();
+  var hasVouchers = false;
+  for (var _vi=0;_vi<voucherList.length;_vi++){if(voucherList[_vi].status==='active'){hasVouchers=true;break;}}
+    if (!hasVouchers) {
+      GameState.balance = GameState.operator.startingBalance || DEFAULT_BALANCE;
+      saveState();
+    }
+  }
+
+  // v8.1.9 NEW-BUG-C FIX: Duplicate beforeunload/visibilitychange/pagehide listeners removed here.
+  // Canonical saveState listeners are registered at the bottom of this IIFE (near setInterval).
+
+  // Init subsystems
+  // v8.1.3: Guard against audio.js parse failure on older Samsung Browser / JoiPlay
+  try {
+    Audio.init();
+  } catch(e) {
+    console.warn('[Game] Audio.init failed — running silent:', e);
+    // Provide silent stub so game still runs without audio
+    Audio = {
+      init: function(){}, resume: function(){}, play: function(){},
+      setMuted: function(){}, getMuted: function(){ return false; },
+      toggleMute: function(){}, setVolume: function(){},
+      playBellsForWin: function(){}, playBellsForBonus: function(){},
+      playSplashWelcome: function(){ return Promise.resolve(); },
+      startJackpotBells: function(){}, stopJackpotBells: function(){},
+      startAmbientMusic: function(){}, stopAmbientMusic: function(){},
+      startRedSpinMusic: function(){}, stopRedSpinMusic: function(){},
+      startPickMusic: function(){}, stopPickMusic: function(){}
+    };
+  }
+  // v8.1.4: Wrap init in try/catch — any silent crash is now visible
+  function _showInitError(msg) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#1a0008;color:#ff6060;font-family:monospace;font-size:13px;padding:20px;z-index:9999;overflow:auto;white-space:pre-wrap;';
+    d.textContent = ''+GAME_VERSION+' INIT ERROR\n\n' + msg + '\n\nPlease screenshot this and send to support.';
+    document.body.appendChild(d);
+  }
+
+  try { UI.init(); } catch(e) { _showInitError('UI.init: ' + e.message); }
+  try { Operator.init(); } catch(e) { console.warn('Operator.init:', e); }
+  try { CashOut.init(); } catch(e) { console.warn('CashOut.init:', e); }
+  try { initVolume(); } catch(e) { console.warn('initVolume:', e); }
+  try { refreshDisplays(); } catch(e) { console.warn('refreshDisplays:', e); }
+
+  // Render initial grid — in its own try/catch so init errors above don't stop reels
+  try {
+    var s0 = REEL_STRIPS.map(function(s) { return Math.floor(Math.random() * s.length); });
+    var _initGrid = buildGrid(s0);
+    UI.renderGrid(_initGrid);
+  } catch(e) {
+    _showInitError('renderGrid: ' + e.message + '\n\nStack: ' + (e.stack || 'none'));
+  }
+
+  // v8.1.4: Startup self-test — reports actual rendered reel state on screen.
+  // Runs 1.5s after init so layout has settled. Removes itself after 9s.
+  setTimeout(function() {
+    try {
+      var report = [];
+      var imgTotal = 0, cellTotal = 0, sizedImgs = 0;
+      for (var rt = 0; rt < 5; rt++) {
+        var reelEl = document.getElementById('reel-' + rt);
+        if (!reelEl) { report.push('reel-' + rt + ':MISSING'); continue; }
+        var stripEl = reelEl.querySelector('.reel-strip');
+        if (!stripEl) { report.push('reel-' + rt + ':NOSTRIP'); continue; }
+        var cells = stripEl.querySelectorAll('.symbol-cell');
+        var imgs  = stripEl.querySelectorAll('img');
+        cellTotal += cells.length;
+        imgTotal  += imgs.length;
+        for (var ig = 0; ig < imgs.length; ig++) {
+          var ib = imgs[ig].getBoundingClientRect();
+          if (ib.width > 2 && ib.height > 2) sizedImgs++;
+        }
+      }
+      var ok = (imgTotal === 15 && sizedImgs === 15);
+      if (!ok) {
+        var sd = document.createElement('div');
+        sd.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);color:#ffd000;font:11px monospace;padding:10px;z-index:99999;white-space:pre-wrap;';
+        sd.textContent = ''+GAME_VERSION+' SELF-TEST\n' +
+          'cells=' + cellTotal + '/15  imgs=' + imgTotal + '/15  sized-imgs=' + sizedImgs + '/15\n' +
+          'SYMBOL_BY_ID=' + (typeof SYMBOL_BY_ID) + '  REEL_STRIPS=' + (typeof REEL_STRIPS) + '\n' +
+          'diagnosis: ' + (imgTotal === 0 ? 'renderGrid did not create images' :
+                           imgTotal < 15 ? 'partial render' :
+                           sizedImgs === 0 ? 'images created but CSS gives them 0 size' :
+                           'partial sizing') + '\n' +
+          'Screenshot this and send to support.';
+        document.body.appendChild(sd);
+        setTimeout(function() { if (sd.parentNode) sd.parentNode.removeChild(sd); }, 9000);
+      }
+    } catch(stErr) {
+      console.error('[SelfTest] error:', stErr);
+    }
+  }, 1500);
+
+  // Overlay real RNG coin values on any gold coins in the initial grid
+
+  (function() {
+    var _initBetPerLine  = (GameState.lastCreditsPerLine || 1) * (GameState.denom || 0.01);
+    var _initLinesActive = GameState.linesActive || DEFAULT_LINES;
+    if (false && typeof Bonuses !== 'undefined') { // dead block — preserved for diff visibility
+      // pregenerateTriggerCoins and overlayReelCoinValues removed v8.0
+    }
+  })();
+
+  // Unlock audio on first gesture (required on iOS and Android)
+  var unlockAudio = function() {
+    Audio.resume();
+    setTimeout(function() { Audio.startAmbientMusic(); }, 500);
+  };
+  document.addEventListener('touchstart', unlockAudio, { once:true, passive:true });
+  document.addEventListener('click',      unlockAudio, { once:true });
+
+  function refreshDisplays() {
+    UI.updateBalance(GameState.balance);
+    UI.updateJackpotMeters();
+    updateBetLine();
+  }
+
+  function updateBetLine() {
+    // MLMC: betPerLine = denom × creditsPerLine (always 1 credit/line per confirmed design)
+    var betPerLine = Math.round(denom * creditsPerLine * 100) / 100;
+    var totalBet   = Math.round(betPerLine * lines * 100) / 100;
+
+    if ($('total-bet-val'))      $('total-bet-val').textContent      = '$' + totalBet.toFixed(2);
+    if ($('lines-display'))      $('lines-display').textContent      = lines;
+    if ($('lines-display2'))     $('lines-display2').textContent     = lines;
+    if ($('total-bet-display2')) $('total-bet-display2').textContent = '$' + totalBet.toFixed(2);
+    var credLineDisp = $('credits-line-display');
+    if (credLineDisp) credLineDisp.textContent = '$' + betPerLine.toFixed(2);
+
+    // Highlight active buttons (legacy line-btns if any remain)
+    document.querySelectorAll('.line-btn').forEach(function(b) {
+      b.classList.toggle('active', parseInt(b.dataset.lines) === lines);
+    });
+    document.querySelectorAll('.denom-option').forEach(function(b) {
+      b.classList.toggle('active', parseFloat(b.dataset.denom) === denom);
+    });
+    // Update dropdown button label
+    var denomBtn = $('denom-display-btn');
+    if (denomBtn) {
+      var denomOptions = document.querySelectorAll('.denom-option');
+      for (var _di = 0; _di < denomOptions.length; _di++) {
+        if (parseFloat(denomOptions[_di].getAttribute('data-denom')) === denom) {
+          denomBtn.textContent = denomOptions[_di].textContent + ' ▾';
+          break;
+        }
+      }
+    }
+    // credits-btn active toggle removed v8.1.2 — no credits selector in UI
+
+    GameState.lastBet            = betPerLine;
+    GameState.lastLines          = lines;
+    GameState.lastDenom          = denom;
+    GameState.lastCreditsPerLine = creditsPerLine;
+  }
+
+  // ── VOLUME (v7.0.6) ───────────────────────────────────────────────
+  // Player volume controls removed per owner. Volume fixed at 50% in audio.js.
+  // setVolume/toggleMute/getMuted remain in audio.js for internal/operator use.
+  function initVolume() { /* controls removed v7.0.6 */ }
+
+  // ── BET PANEL — SELECT LINES cycles active lines ─────────────────
+  // SELECT LINES: 5 → 10 → 15 → 20 → back to 5. Minimum 5 lines (owner-confirmed 2026-05-18).
+  // Credits/line stays selectable via credits buttons (1, 2, 3, 5).
+  // BET MAX = 5 credits/line + 20 lines. Only active lines pay wins.
+  var _betOneBtn  = $('bet-one-btn');
+  var _linesCycle = [5, 10, 15, 20];
+  if (_betOneBtn) {
+    _betOneBtn.addEventListener('click', function() {
+      if (GameState.spinInProgress || GameState.activeBonus) return;
+      var idx = _linesCycle.indexOf(lines);
+      lines = _linesCycle[(idx + 1) % _linesCycle.length];
+      applyScaledJackpotSeeds(denom, lines);
+      UI.updateJackpotMeters();
+      updateBetLine(); Audio.play('button_click');
+      // Show active payline patterns on reel grid
+      if (typeof UI !== 'undefined' && UI.showActivePaylines) UI.showActivePaylines(lines);
+    });
+  }
+  var _betMaxBtn = $('bet-max-btn');
+  if (_betMaxBtn) _betMaxBtn.addEventListener('click', function() {
+    if (GameState.spinInProgress || GameState.activeBonus) return;
+    creditsPerLine = (typeof DENOM_CREDIT_LOCK !== 'undefined' && DENOM_CREDIT_LOCK[denom]) ? DENOM_CREDIT_LOCK[denom] : 5; lines = 20;
+    applyScaledJackpotSeeds(denom, lines);
+    UI.updateJackpotMeters();
+    updateBetLine(); Audio.play('button_click');
+  });
+
+  // ── DENOM DROPDOWN ────────────────────────────────────────────────
+  var denomDisplayBtn = $('denom-display-btn');
+  var denomDropdown   = $('denom-dropdown');
+
+  // Toggle dropdown open/close
+  if (denomDisplayBtn) denomDisplayBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (GameState.spinInProgress) return;
+    if (denomDropdown) denomDropdown.classList.toggle('open');
+    Audio.play('button_click');
+  });
+
+  // Close dropdown when tapping elsewhere
+  document.addEventListener('click', function() {
+    if (denomDropdown) denomDropdown.classList.remove('open');
+  });
+
+  // Denom option selected
+  document.querySelectorAll('.denom-option').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (GameState.spinInProgress) return;
+      denom = parseFloat(btn.dataset.denom);
+      document.querySelectorAll('.denom-option').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      var label = btn.textContent;
+      if (denomDisplayBtn) denomDisplayBtn.textContent = label + ' ▾';
+      if (denomDropdown) denomDropdown.classList.remove('open');
+      // v8.1.0: Auto-lock creditsPerLine to denom cent value
+      if (typeof DENOM_CREDIT_LOCK !== 'undefined' && DENOM_CREDIT_LOCK[denom] !== undefined) {
+        creditsPerLine = DENOM_CREDIT_LOCK[denom];
+        GameState.lastCreditsPerLine = creditsPerLine;
+      }
+      // Update jackpot seeds for new denomination — scaled by active lines
+      if (typeof getJackpotSeedsForDenom !== 'undefined') {
+        applyScaledJackpotSeeds(denom, lines);
+        UI.updateJackpotMeters();
+        saveState();
+      }
+      updateBetLine();
+      Audio.play('button_click');
+    });
+  });
+
+  // credits-btn handler removed v8.1.2 — no credits selector exists in DOM
+
+  // ── BET ───────────────────────────────────────────────────────────
+  // Stale duplicate bet-max-btn listener removed v8.1.8 (BUG-V5 fix).
+  // Active BET MAX handler is the _betMaxBtn block above — correctly preserves current denom.
+
+  // ── SPIN + SKIP — 2-tap rule ─────────────────────────────────────
+  // Tap 1: If animations running → skip to end of current spin result
+  // Tap 2: Once animations done and spin idle → start next spin
+  // v7.0.6: audio plays on EVERY tap (was silent on skip-tap)
+  var _animationsSkipped = false;
+
+  var _sb=$('spin-btn'); if(_sb) _sb.addEventListener('click', function() {
+    // Active bonus — ignore spin button
+    if (GameState.activeBonus) return;
+
+    // Tap 1A: Credit countup animation → skip it
+    if (UI.isAnimatingCredits) {
+      Audio.play('button_click');
+      UI.skipCreditAnimation();
+      _animationsSkipped = true;
+      return;
+    }
+
+    // Tap 1B: Payline animations running → skip, show final result
+    // Audio plays here too — was silent before v7.0.6
+    if (GameState.spinInProgress) {
+      Audio.play('button_click');
+      if (typeof setSkipPaylineAnimations !== 'undefined') setSkipPaylineAnimations(true);
+      _animationsSkipped = true;
+      return;
+    }
+
+    // Spin is idle — start next spin
+    _animationsSkipped = false;
+    doSpin();
+  });
+
+  // v8.1.6: converted async→ES5 Promise chain (Rule 14 — no async/await in inline script blocks)
+  function doSpin() {
+    if (GameState.spinInProgress) return;
+    var betPerLine = Math.round(denom * creditsPerLine * 100) / 100;
+    var total      = Math.round(betPerLine * lines * 100) / 100;
+    if (GameState.balance <= 0) { CashOut.startZeroBalanceFlash(); UI.showToast('INSERT CASH TO PLAY'); return; }
+    if (GameState.balance < total) { UI.showToast('Insufficient balance!'); return; }
+    Audio.play('button_click');
+    _acquireWakeLock();
+    executeSpin(betPerLine, lines, denom, creditsPerLine).then(function() {
+      _releaseWakeLock();
+      refreshDisplays();
+    }).catch(function(spinErr) {
+      console.error('[doSpin] executeSpin threw:', spinErr);
+      GameState.spinInProgress = false;
+      GameState.activeBonus    = null;
+      UI.setControlsEnabled(true);
+      UI.showToast('Spin error — please try again');
+      _releaseWakeLock();
+      refreshDisplays();
+    });
+  }
+
+  // ── HELP / PAYTABLE MENU — v8.1.0: moved to buildHelpMenu() in ui.js ───────────────
+  // Old buildPaytable() removed — function now lives in ui.js as buildHelpMenu().
+  // Wiring for help-btn, help-close, help-prev, help-next also in ui.js.
+
+  // ── EXIT BUTTON — v8.1.50: confirmation overlay + best-effort close ──
+  // window.close() only works when tab was opened by script (e.g. kiosk/WebView).
+  // In regular browser tabs and PWA standalone it is silently blocked.
+  // Strategy: show confirmation, then try window.close(), then about:blank fallback,
+  // then instruct player to use the browser back button.
+  var LAUNCHER_RETURN_URL = '';
+  try {
+    var _stored = sessionStorage.getItem('__turrelle_launcher_url');
+    if (_stored) { LAUNCHER_RETURN_URL = _stored; }
+  } catch(e) {}
+
+  var _exitOverlay   = $('exit-overlay');
+  var _exitConfirmBtn = $('exit-confirm-btn');
+  var _exitCancelBtn  = $('exit-cancel-btn');
+  var _exitManualMsg  = $('exit-manual-msg');
+
+  function _showExitOverlay() {
+    if (GameState.spinInProgress || GameState.activeBonus) {
+      UI.showToast('Please wait for current game to finish');
+      return;
+    }
+    if (_exitOverlay) {
+      if (_exitManualMsg) _exitManualMsg.style.display = 'none';
+      _exitOverlay.classList.add('active');
+    }
+  }
+
+  function _hideExitOverlay() {
+    if (_exitOverlay) _exitOverlay.classList.remove('active');
+  }
+
+  function _doCloseGame() {
+    saveState();
+    Audio.stopAmbientMusic();
+    // Always route to Gold Coins Casino lobby
+    window.location.href = 'https://theturrellesisters.github.io/turrelle_gold_coins_casino/';
+  }
+
+  var _eb = $('exit-btn');
+  if (_eb) _eb.addEventListener('click', _showExitOverlay);
+  if (_exitCancelBtn) _exitCancelBtn.addEventListener('click', _hideExitOverlay);
+  if (_exitConfirmBtn) _exitConfirmBtn.addEventListener('click', function() {
+    _hideExitOverlay();
+    _doCloseGame();
+  });
+  // Tap overlay background to cancel
+  if (_exitOverlay) _exitOverlay.addEventListener('click', function(e) {
+    if (e.target === _exitOverlay) _hideExitOverlay();
+  });
+
+  // Standalone mode splash re-enter — FIX-ES6-EXIT v8.1.50: was { once: true } (ES6 options obj)
+  // Replaced with manual removeEventListener for ES5 compatibility on older Android WebViews.
+  var splashDismissed = false;
+  function reEnterGame() {
+    if (splashDismissed) return;
+    splashDismissed = true;
+    var splash = document.getElementById('splash-screen');
+    var gameWrap = document.getElementById('game-wrap');
+    splash.removeEventListener('click', reEnterGame);
+    splash.removeEventListener('touchend', reEnterGame);
+    if (splash) splash.style.display = 'none';
+    if (gameWrap) gameWrap.style.display = '';
+    Audio.startAmbientMusic();
+  }
+
+  // ── LOG TABS ──────────────────────────────────────────────────────
+  document.querySelectorAll('.log-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.log-tab').forEach(function(t){t.classList.remove('active');});
+      tab.classList.add('active');
+      if (typeof Operator !== 'undefined' && Operator.showLog) Operator.showLog(tab.dataset.tab);
+    });
+  });
+  var _lc=$('log-close'); if(_lc) _lc.addEventListener('click', function() { var _ls=$('log-screen'); if(_ls) _ls.classList.remove('active'); });
+
+  // ── PERSIST ───────────────────────────────────────────────────────
+  document.addEventListener('visibilitychange', function() { if(document.hidden) saveState(); });
+  window.addEventListener('beforeunload', function() { saveState(); });
+  window.addEventListener('pagehide',     function() { saveState(); }); // iOS
+
+  setInterval(function() { UI.updateJackpotMeters(); }, 4000);
+})();
+</script>
+
+
+
+<!-- ── RED SPIN BONUS WIN OVERLAY ─────────────────────────────────── -->
+<div id="rs-bonus-win-overlay">
+  <div id="rs-coin-rain"></div>
+  <div id="rs-bonus-win-content">
+    <div id="rs-bonus-win-label">🔴 RED SPIN BONUS</div>
+    <div id="rs-bonus-win-amt">$0.00</div>
+    <div id="rs-bonus-win-spins">0 SPINS</div>
+    <div id="rs-bonus-win-tap">TAP TO CONTINUE</div>
+  </div>
+</div>
+
+<!-- EXIT CONFIRMATION OVERLAY — v8.1.50 -->
+<div id="exit-overlay">
+  <div id="exit-box">
+    <div id="exit-title">EXIT GAME</div>
+    <div id="exit-msg">Return to The Turrelle Sisters Gold Coins Casino?</div>
+    <div class="exit-btn-row">
+      <button id="exit-confirm-btn">CLOSE GAME</button>
+      <button id="exit-cancel-btn">CANCEL</button>
+    </div>
+    <div id="exit-manual-msg">Please press your browser's<br><strong>Back button</strong> or close this tab to exit.</div>
+  </div>
+</div>
+
+
+<script>
+  var PROG_GAME_ID = 'turrelle';
+  var PROG_DENOM   = 1.00;
+</script>
+
+<script>
+  /* Progressive meter init — runs after all scripts loaded */
+  var PROG_GAME_ID = 'turrelle';
+  var PROG_DENOM   = 1.00;
+  if (typeof Progressive !== 'undefined') {
+    Progressive.onChange(function(val) {
+      var el = document.getElementById('ts-prog-val');
+      if (el) el.textContent = '$' + val.toFixed(2);
+    });
+    Progressive.init(function() {
+      var el = document.getElementById('ts-prog-val');
+      if (el) el.textContent = Progressive.getDisplay();
     });
   }
 </script>
-<script src="js/progressive.js?v=5.28"></script>
-<script src="js/config.js?v=5.28"></script>
-<script src="js/game.js?v=5.28"></script>
-<script src="js/operator.js?v=5.28"></script>
 
-<!-- LOBBY PROMO BANNER -->
 <div id="lobby-promo">
   <div id="lp-icon">&#127922;</div>
   <div id="lp-text">
@@ -147,92 +1379,63 @@
     <div id="lp-sub">Play all 3 games &bull; Shared Progressive Jackpot</div>
   </div>
   <a id="lp-btn" href="https://theturrellesisters.github.io/turrelle_gold_coins_casino/" target="_blank">VISIT</a>
-  <div id="lp-close" onclick="dismissPromo()">&#10005;</div>
+  <div id="lp-close" onclick="this.parentNode.classList.remove('show')">&#10005;</div>
 </div>
 <script>
 (function(){
-  var PROMO_KEY = 'lp_dismissed';
-  function dismissPromo(){
-    document.getElementById('lobby-promo').classList.remove('show');
-    try{ sessionStorage.setItem(PROMO_KEY,'1'); }catch(e){}
-  }
-  window.dismissPromo = dismissPromo;
-  // Show after first spin completes — hook into spin button
-  var _shown = false;
-  function maybeShowPromo(){
-    if(_shown) return;
-    try{ if(sessionStorage.getItem(PROMO_KEY)) return; }catch(e){}
-    _shown = true;
+  var _promoShown = false;
+  function showPromo(){
+    if(_promoShown) return;
+    try{ if(sessionStorage.getItem('lp_d')) return; }catch(e){}
+    _promoShown = true;
     setTimeout(function(){
-      document.getElementById('lobby-promo').classList.add('show');
-      // Auto-dismiss after 10 seconds
-      setTimeout(dismissPromo, 10000);
+      var el = document.getElementById('lobby-promo');
+      if(el){ el.classList.add('show'); setTimeout(function(){ el.classList.remove('show'); }, 10000); }
     }, 1500);
   }
-  // Listen for spin button clicks
-  var spinBtn = document.getElementById('spin-btn');
-  if(spinBtn){
-    spinBtn.addEventListener('click', function onFirstSpin(){
-      spinBtn.removeEventListener('click', onFirstSpin);
-      // Wait for spin to complete (~3s) then show
-      setTimeout(maybeShowPromo, 3000);
-    });
-  }
+  // Hook into spin button for Turrelle
+  var sb = document.getElementById('spin-btn');
+  if(sb){ sb.addEventListener('click', function h(){ sb.removeEventListener('click',h); setTimeout(showPromo,3500); }); }
 }());
 </script>
 
 
-<!-- ATTITUDE CHECK — shown on non-winner devices -->
 <div id="attitude-check">
-  <div id="ac-top">&#9733; Gold Coins Casino &#9733;</div>
+  <div style="font-size:10px;color:#ff8844;letter-spacing:3px">&#9733; GOLD COINS CASINO &#9733;</div>
   <div id="ac-title">ATTITUDE CHECK!!!</div>
-  <div id="ac-sub">Someone Just Won The Progressive Jackpot!</div>
-  <div id="ac-amt" id="ac-jackpot-amt">$0.00</div>
-  <div id="ac-sub">Progressive Jackpot!</div>
+  <div style="font-size:13px;color:#ffaa00;letter-spacing:1px">Someone Just Won The Progressive Jackpot!</div>
+  <div id="ac-amt">$0.00</div>
   <div id="ac-msg">Keep playing for your chance!!!</div>
-  <button id="ac-dismiss" onclick="document.getElementById('attitude-check').classList.remove('show')">
-    GOT IT &#128074;
-  </button>
+  <button id="ac-dismiss" onclick="document.getElementById('attitude-check').classList.remove('show')">GOT IT &#128074;</button>
 </div>
-
-<!-- FORCE WIN CELEBRATION — shown on winner device -->
 <div id="force-win-cel">
   <video id="fw-video" autoplay loop muted playsinline webkit-playsinline></video>
   <div id="fw-title">PROGRESSIVE JACKPOT!</div>
   <div id="fw-amt">$0.00</div>
-  <div id="fw-sub" style="font-size:11px;color:#ffaa00;letter-spacing:1px;text-align:center">CONGRATULATIONS! &#127881;</div>
-  <button id="fw-dismiss" onclick="document.getElementById('force-win-cel').classList.remove('show')">
-    COLLECT WINNINGS &#127881;
-  </button>
+  <div style="font-size:11px;color:#ffaa00;letter-spacing:1px;text-align:center">CONGRATULATIONS! &#127881;</div>
+  <button id="fw-dismiss" onclick="document.getElementById('force-win-cel').classList.remove('show')">COLLECT WINNINGS &#127881;</button>
 </div>
-
 <script>
 (function(){
-  var CEL_VIDEOS = ["assets/videos/josie_dance.mp4","assets/videos/sasha_dance.mp4","assets/videos/sasha_alt.mp4"];
-  var _celIdx = 0;
-
-  function showForceWin(amt) {
-    var el  = document.getElementById('force-win-cel');
-    var vid = document.getElementById('fw-video');
-    var amtEl = document.getElementById('fw-amt');
-    if (amtEl) amtEl.textContent = '$' + amt.toFixed(2);
-    if (vid) {
-      vid.src = CEL_VIDEOS[Math.floor(Math.random() * CEL_VIDEOS.length)];
-      vid.load(); vid.play();
-    }
-    if (el) el.classList.add('show');
+  var CEL_VIDS=['assets/videos/josie_dance.mp4','assets/videos/sasha_dance.mp4','assets/videos/sasha_alt.mp4'];
+  var _vi=0;
+  function showForceWin(amt){
+    var el=document.getElementById('force-win-cel');
+    var vid=document.getElementById('fw-video');
+    var amtEl=document.getElementById('fw-amt');
+    if(amtEl) amtEl.textContent='$'+amt.toFixed(2);
+    if(vid){vid.src = CEL_VIDS[Math.floor(Math.random() * CEL_VIDS.length)];vid.load();vid.play();}
+    if(el) el.classList.add('show');
   }
-
-  function showAttitudeCheck(amt, winnerGame) {
-    var el    = document.getElementById('attitude-check');
-    var amtEl = document.getElementById('ac-jackpot-amt');
-    if (amtEl) amtEl.textContent = '$' + (amt || 0).toFixed(2);
-    if (el) el.classList.add('show');
+  function showAttitude(amt){
+    var el=document.getElementById('attitude-check');
+    var amtEl=document.getElementById('ac-amt');
+    if(amtEl) amtEl.textContent='$'+(amt||0).toFixed(2);
+    if(el) el.classList.add('show');
   }
-
-  if (typeof Progressive !== 'undefined') {
+  if(typeof Progressive!=='undefined'){
     Progressive.onForceWin(showForceWin);
-    Progressive.onForceNotify(showAttitudeCheck);
+    Progressive.onForceNotify(showAttitude);
   }
 }());
 </script>

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="bgLip" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a0d2e"/>
+      <stop offset="100%" stop-color="#0a0818"/>
+    </linearGradient>
+    <linearGradient id="goldCase" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fff0a0"/>
+      <stop offset="30%" stop-color="#d4af37"/>
+      <stop offset="60%" stop-color="#f5d878"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <linearGradient id="pinkLip" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff80c0"/>
+      <stop offset="40%" stop-color="#e91e8c"/>
+      <stop offset="100%" stop-color="#9c0060"/>
+    </linearGradient>
+    <linearGradient id="goldFrame4" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff0a0"/>
+      <stop offset="50%" stop-color="#d4af37"/>
+      <stop offset="100%" stop-color="#7a5c00"/>
+    </linearGradient>
+    <filter id="glowLip">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="200" height="200" rx="18" fill="url(#bgLip)"/>
+  <rect x="4" y="4" width="192" height="192" rx="15" fill="none" stroke="url(#goldFrame4)" stroke-width="3"/>
+  <!-- SCATTER label -->
+  <text x="100" y="28" font-family="Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#d4af37" letter-spacing="2">SCATTER</text>
+  <!-- Lipstick tube body (gold case) -->
+  <rect x="78" y="130" width="44" height="52" rx="5" fill="url(#goldCase)" stroke="#8b6914" stroke-width="2"/>
+  <!-- Case shine -->
+  <rect x="82" y="133" width="12" height="46" rx="3" fill="#fff7a0" opacity="0.3"/>
+  <!-- Lipstick collar -->
+  <rect x="74" y="118" width="52" height="16" rx="4" fill="url(#goldCase)" stroke="#8b6914" stroke-width="1.5"/>
+  <!-- Lipstick bullet -->
+  <rect x="82" y="58" width="36" height="64" rx="3" fill="url(#pinkLip)" stroke="#9c0060" stroke-width="1.5"/>
+  <!-- Bullet tip -->
+  <path d="M82 58 Q100 30 118 58 Z" fill="url(#pinkLip)" stroke="#9c0060" stroke-width="1.5"/>
+  <!-- Shine on bullet -->
+  <rect x="86" y="62" width="10" height="40" rx="4" fill="#ffb8e0" opacity="0.4"/>
+  <!-- Gold band between bullet and collar -->
+  <rect x="82" y="118" width="36" height="5" fill="url(#goldCase)"/>
+  <!-- Sparkles -->
+  <circle cx="40" cy="40" r="4" fill="#e91e8c" filter="url(#glowLip)" opacity="0.9"/>
+  <circle cx="160" cy="38" r="3" fill="#e91e8c" filter="url(#glowLip)" opacity="0.8"/>
+  <line x1="40" y1="32" x2="40" y2="48" stroke="#e91e8c" stroke-width="1.5" opacity="0.8"/>
+  <line x1="32" y1="40" x2="48" y2="40" stroke="#e91e8c" stroke-width="1.5" opacity="0.8"/>
+  <circle cx="155" cy="165" r="3" fill="#d4af37" opacity="0.7"/>
+</svg>

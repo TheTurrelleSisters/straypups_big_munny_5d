@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="bgBill" cx="50%" cy="40%" r="55%">
+      <stop offset="0%"   stop-color="#0a1a0a"/>
+      <stop offset="100%" stop-color="#020e04"/>
+    </radialGradient>
+    <linearGradient id="goldBill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#fff7a0"/>
+      <stop offset="30%"  stop-color="#d4af37"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <linearGradient id="billFace" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#4aad5a"/>
+      <stop offset="40%"  stop-color="#2e8b42"/>
+      <stop offset="100%" stop-color="#1a5a28"/>
+    </linearGradient>
+    <linearGradient id="billInner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#3a9a4a"/>
+      <stop offset="100%" stop-color="#1e6e2e"/>
+    </linearGradient>
+    <linearGradient id="dollarGold" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#fff7a0"/>
+      <stop offset="35%"  stop-color="#f0c030"/>
+      <stop offset="100%" stop-color="#9a6e00"/>
+    </linearGradient>
+    <radialGradient id="ovalFill" cx="40%" cy="35%" r="60%">
+      <stop offset="0%"   stop-color="#1e5c2a"/>
+      <stop offset="100%" stop-color="#0a2010"/>
+    </radialGradient>
+    <filter id="glowBill" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowDollar" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background tile -->
+  <rect width="200" height="200" rx="18" fill="url(#bgBill)"/>
+  <!-- Gold border frame -->
+  <rect x="4" y="4" width="192" height="192" rx="15" fill="none" stroke="url(#goldBill)" stroke-width="3"/>
+
+  <!-- Bill body -->
+  <g transform="translate(100,105) rotate(-4) translate(-100,-95)">
+    <!-- Bill shadow -->
+    <rect x="24" y="54" width="154" height="90" rx="10" fill="rgba(0,0,0,0.45)"/>
+    <!-- Bill face -->
+    <rect x="20" y="50" width="154" height="90" rx="10" fill="url(#billFace)" stroke="url(#goldBill)" stroke-width="2.5" filter="url(#glowBill)"/>
+    <!-- Inner border panel -->
+    <rect x="28" y="57" width="138" height="76" rx="6" fill="none" stroke="url(#goldBill)" stroke-width="1.5" opacity="0.6"/>
+    <!-- Second inner fill -->
+    <rect x="33" y="62" width="128" height="66" rx="4" fill="url(#billInner)" opacity="0.3"/>
+    <rect x="33" y="62" width="128" height="66" rx="4" fill="none" stroke="rgba(255,247,160,0.25)" stroke-width="1"/>
+
+    <!-- Left rosette -->
+    <circle cx="43" cy="95" r="16" fill="none" stroke="url(#goldBill)" stroke-width="1.2" opacity="0.55"/>
+    <circle cx="43" cy="95" r="10" fill="rgba(212,175,55,0.12)" stroke="url(#goldBill)" stroke-width="1" opacity="0.5"/>
+    <circle cx="43" cy="95" r="4"  fill="rgba(212,175,55,0.3)"/>
+
+    <!-- Right rosette -->
+    <circle cx="157" cy="95" r="16" fill="none" stroke="url(#goldBill)" stroke-width="1.2" opacity="0.55"/>
+    <circle cx="157" cy="95" r="10" fill="rgba(212,175,55,0.12)" stroke="url(#goldBill)" stroke-width="1" opacity="0.5"/>
+    <circle cx="157" cy="95" r="4"  fill="rgba(212,175,55,0.3)"/>
+
+    <!-- "THE TURRELLE SISTERS" -->
+    <text x="100" y="65"
+      font-family="Georgia,serif" font-size="8" font-weight="700"
+      text-anchor="middle" fill="#fff7a0" opacity="0.85" letter-spacing="2"
+    >THE TURRELLE SISTERS</text>
+
+    <!-- Thin rule below title -->
+    <line x1="34" y1="69" x2="166" y2="69" stroke="rgba(255,247,160,0.2)" stroke-width="0.8"/>
+
+    <!-- Portrait oval — vector replacement for embedded PNG (BUG-V6 fix v8.1.12) -->
+    <!-- Oval shadow -->
+    <ellipse cx="100" cy="95" rx="26" ry="29" fill="rgba(0,0,0,0.45)"/>
+    <!-- Oval background fill -->
+    <ellipse cx="100" cy="95" rx="24" ry="27" fill="url(#ovalFill)"/>
+    <!-- Decorative inner oval ring -->
+    <ellipse cx="100" cy="95" rx="20" ry="23" fill="none" stroke="rgba(255,247,160,0.18)" stroke-width="1"/>
+    <!-- Dollar sign — main body -->
+    <text x="100" y="103"
+      font-family="Georgia,serif" font-size="36" font-weight="900"
+      text-anchor="middle" fill="url(#dollarGold)"
+      filter="url(#glowDollar)"
+    >$</text>
+    <!-- Dollar sign — highlight layer -->
+    <text x="100" y="103"
+      font-family="Georgia,serif" font-size="36" font-weight="900"
+      text-anchor="middle" fill="none"
+      stroke="#fff7a0" stroke-width="0.6" opacity="0.45"
+    >$</text>
+    <!-- Oval portrait frame ring -->
+    <ellipse cx="100" cy="95" rx="26" ry="29" fill="none" stroke="url(#goldBill)" stroke-width="1.8" opacity="0.9"/>
+
+    <!-- Thin rule above bottom text -->
+    <line x1="34" y1="122" x2="166" y2="122" stroke="rgba(255,247,160,0.2)" stroke-width="0.8"/>
+
+    <!-- "BIG MUNNY" -->
+    <text x="100" y="131"
+      font-family="Georgia,serif" font-size="8" font-weight="700"
+      text-anchor="middle" fill="#fff7a0" opacity="0.75" letter-spacing="3"
+    >BIG MUNNY</text>
+  </g>
+
+  <!-- Corner sparkles -->
+  <circle cx="30"  cy="30"  r="4" fill="#fff7a0" opacity="0.9"/>
+  <line x1="30"  y1="22" x2="30"  y2="38" stroke="#fff7a0" stroke-width="1.5" opacity="0.8"/>
+  <line x1="22"  y1="30" x2="38"  y2="30" stroke="#fff7a0" stroke-width="1.5" opacity="0.8"/>
+
+  <circle cx="170" cy="25"  r="3" fill="#fff7a0" opacity="0.8"/>
+  <line x1="170" y1="18" x2="170" y2="32" stroke="#fff7a0" stroke-width="1.2" opacity="0.7"/>
+  <line x1="163" y1="25" x2="177" y2="25" stroke="#fff7a0" stroke-width="1.2" opacity="0.7"/>
+
+  <circle cx="160" cy="170" r="4" fill="#fff7a0" opacity="0.7"/>
+  <line x1="160" y1="162" x2="160" y2="178" stroke="#fff7a0" stroke-width="1.5" opacity="0.6"/>
+  <line x1="152" y1="170" x2="168" y2="170" stroke="#fff7a0" stroke-width="1.5" opacity="0.6"/>
+
+  <circle cx="25"  cy="165" r="3" fill="#fff7a0" opacity="0.9"/>
+  <line x1="25"  y1="158" x2="25"  y2="172" stroke="#fff7a0" stroke-width="1.2" opacity="0.8"/>
+  <line x1="18"  y1="165" x2="32"  y2="165" stroke="#fff7a0" stroke-width="1.2" opacity="0.8"/>
+</svg>
