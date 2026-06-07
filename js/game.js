@@ -947,7 +947,10 @@ function doSpin(){
   if(S.bal<S.cpl*DENOM){toast('INSERT CASH TO PLAY');return;}
   if(_reelWinH===0) initReelSlots();
   S.spinning=true;S.bal-=S.cpl*DENOM;
-  if(typeof Progressive!=='undefined') Progressive.contribute(S.cpl*DENOM);
+  var _forceJP=false;
+  if(typeof Progressive!=='undefined'){
+    _forceJP=Progressive.contribute(S.cpl*DENOM);
+  }
   var _spinBalBefore=S.bal+S.cpl*DENOM; var _spinCardSerial=BG.cardSerial;
   setWin(0,'');document.getElementById('bt-box').classList.remove('on');
   updUI();setCtrl(false);
@@ -957,6 +960,28 @@ function doSpin(){
   GS.hasSpun=true;GS.state='active';
 
   var winPatterns=doBingoSpin();
+
+  // ── FORCE JACKPOT CHECK ─────────────────────────────────────────────
+  // If operator armed a force jackpot, try to claim it atomically.
+  // If claim succeeds: inject Progressive Jackpot pattern into winPatterns.
+  // If claim fails (another device was faster): spin continues normally.
+  if(_forceJP && typeof Progressive!=='undefined'){
+    Progressive.claimForce(function(didWin, forceAmt){
+      if(!didWin) return; // someone else got it — spin normally
+      // Inject the progressive pattern (Hot Dog cells, ≤21 balls)
+      var _forcePat={
+        name:'Progressive Jackpot',balls:21,pay:[40,80,120],
+        reel:'1bw4',cells:[6,7,8,10,11,12,13,14,16,17,18],
+        isProgressive:true,_forceAmt:forceAmt
+      };
+      if(!winPatterns.length){
+        winPatterns=[_forcePat];
+      } else {
+        winPatterns.unshift(_forcePat);
+      }
+    });
+  }
+  // ── END FORCE JACKPOT CHECK ───────────────────────────────────────────
   // Active caller: start on first spin, keep running on subsequent spins
   if(!BG.entTimer) startActiveCaller();
   var spinData;
@@ -1071,6 +1096,83 @@ function renderHelp(){
 }
 
 /* â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* ── PROGRESSIVE JACKPOT OVERLAY ─────────────────────────────────────── */
+function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, cardSerial, balBefore) {
+  var el  = document.getElementById('jp-ov');
+  var big = document.getElementById('jp-big');
+  var sub = document.getElementById('jp-sub');
+  var amt = document.getElementById('jp-amt');
+  if (big) big.textContent = 'PROGRESSIVE JACKPOT!';
+  if (sub) sub.textContent = 'HOT DOG IN 21 BALLS!';
+  if (amt) amt.textContent = (typeof Progressive !== 'undefined' ? Progressive.getDisplay() : '') + '  +  ' + fmtRaw(baseAmt) + ' BASE';
+  sndJackpot(); el.classList.add('on');
+  function onDismiss() {
+    el.classList.remove('on'); el.onclick = null; el.ontouchend = null;
+    if (big) big.textContent = 'JACKPOT!';
+    if (sub) sub.textContent = 'CONGRATULATIONS!';
+    if (rsPatterns && rsPatterns.length > 0) {
+      startPatternCycle([basePat]);
+      setTimeout(function () {
+        stopPatternCycle();
+        runRS(rsPatterns, cpl, function (bonusTotal) {
+          setWin(baseAmt + bonusTotal + (S.lastWin - baseAmt), 'PROGRESSIVE JACKPOT + RED SPIN!');
+          document.getElementById('bt-box').classList.remove('on');
+          startPatternCycle(winPatterns);
+          opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
+            bet:cpl*DENOM, win:S.lastWin,
+            patterns:winPatterns.map(function(p){return p.name;}),
+            balBefore:balBefore, balAfter:S.bal});
+          _spinDebounce = Date.now(); updUI(); S.spinning = false; setCtrl(true);
+        });
+      }, 600);
+    } else {
+      startPatternCycle(winPatterns);
+      opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
+        bet:cpl*DENOM, win:S.lastWin,
+        patterns:winPatterns.map(function(p){return p.name;}),
+        balBefore:balBefore, balAfter:S.bal});
+      _spinDebounce = Date.now(); S.spinning = false; setCtrl(true); updUI();
+    }
+  }
+  el.onclick    = onDismiss;
+  el.ontouchend = function (e) { e.preventDefault(); onDismiss(); };
+}
+
+function updateProgMeter(value) {
+  var el = document.getElementById('prog-meter-val');
+  if (el) el.textContent = '$' + value.toFixed(2);
+}
+
+function initProgressiveMeter() {
+  if (typeof Progressive === 'undefined') return;
+  Progressive.onChange(updateProgMeter);
+  Progressive.init(function () {
+    updateProgMeter(Progressive.getValue());
+    setTimeout(function () { sizeLayout(); }, 50);
+  });
+  /* ATTITUDE CHECK callbacks */
+  Progressive.onForceWin(function(amt) {
+    var fv = document.getElementById('fw-video');
+    var fa = document.getElementById('fw-amt');
+    var fc = document.getElementById('force-win-cel');
+    if (fa) fa.textContent = '$' + amt.toFixed(2);
+    if (fv) {
+      var vids = ['assets/videos/josie_dance.mp4','assets/videos/sasha_dance.mp4','assets/videos/sasha_alt.mp4'];
+      fv.src = vids[Math.floor(Math.random() * vids.length)];
+      fv.load(); fv.play();
+    }
+    if (fc) fc.classList.add('show');
+  });
+  Progressive.onForceNotify(function(amt) {
+    var el  = document.getElementById('attitude-check');
+    var amtEl = document.getElementById('ac-jackpot-amt');
+    if (amtEl) amtEl.textContent = '$' + (amt || 0).toFixed(2);
+    if (el)  el.classList.add('show');
+  });
+}
+
+
 /* -- INIT -- */
 BG.callSeq=genBallCall();
 BG.ballPos=0;
@@ -1086,9 +1188,11 @@ document.getElementById('bingo-col-hdrs').style.display='none';
   ];
   renderReels([5,1,4],initGhosts);
 }());
-updUI();sizeLayout();
+updUI();
 initProgressiveMeter();
-startSilentCaller(); // game load — silent until first SPIN
+// sizeLayout called by initProgressiveMeter callback after meter renders
+startSilentCaller();
+setTimeout(sizeLayout,100); // fallback layout pass // game load — silent until first SPIN
 startPatternShowcase();
 
 document.getElementById('spin-btn').addEventListener('click',doSpin);

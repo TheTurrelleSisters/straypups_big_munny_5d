@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>StrayPups Big Munny $5 v5.28</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -131,9 +134,108 @@
     });
   }
 </script>
+<script src="js/progressive.js?v=5.28"></script>
 <script src="js/config.js?v=5.28"></script>
 <script src="js/game.js?v=5.28"></script>
-<script src="js/progressive.js?v=5.28"></script>
 <script src="js/operator.js?v=5.28"></script>
+
+<!-- LOBBY PROMO BANNER -->
+<div id="lobby-promo">
+  <div id="lp-icon">&#127922;</div>
+  <div id="lp-text">
+    <div id="lp-title">&#9733; Gold Coins Casino</div>
+    <div id="lp-sub">Play all 3 games &bull; Shared Progressive Jackpot</div>
+  </div>
+  <a id="lp-btn" href="https://theturrellesisters.github.io/turrelle_gold_coins_casino/" target="_blank">VISIT</a>
+  <div id="lp-close" onclick="dismissPromo()">&#10005;</div>
+</div>
+<script>
+(function(){
+  var PROMO_KEY = 'lp_dismissed';
+  function dismissPromo(){
+    document.getElementById('lobby-promo').classList.remove('show');
+    try{ sessionStorage.setItem(PROMO_KEY,'1'); }catch(e){}
+  }
+  window.dismissPromo = dismissPromo;
+  // Show after first spin completes — hook into spin button
+  var _shown = false;
+  function maybeShowPromo(){
+    if(_shown) return;
+    try{ if(sessionStorage.getItem(PROMO_KEY)) return; }catch(e){}
+    _shown = true;
+    setTimeout(function(){
+      document.getElementById('lobby-promo').classList.add('show');
+      // Auto-dismiss after 10 seconds
+      setTimeout(dismissPromo, 10000);
+    }, 1500);
+  }
+  // Listen for spin button clicks
+  var spinBtn = document.getElementById('spin-btn');
+  if(spinBtn){
+    spinBtn.addEventListener('click', function onFirstSpin(){
+      spinBtn.removeEventListener('click', onFirstSpin);
+      // Wait for spin to complete (~3s) then show
+      setTimeout(maybeShowPromo, 3000);
+    });
+  }
+}());
+</script>
+
+
+<!-- ATTITUDE CHECK — shown on non-winner devices -->
+<div id="attitude-check">
+  <div id="ac-top">&#9733; Gold Coins Casino &#9733;</div>
+  <div id="ac-title">ATTITUDE CHECK!!!</div>
+  <div id="ac-sub">Someone Just Won The Progressive Jackpot!</div>
+  <div id="ac-amt" id="ac-jackpot-amt">$0.00</div>
+  <div id="ac-sub">Progressive Jackpot!</div>
+  <div id="ac-msg">Keep playing for your chance!!!</div>
+  <button id="ac-dismiss" onclick="document.getElementById('attitude-check').classList.remove('show')">
+    GOT IT &#128074;
+  </button>
+</div>
+
+<!-- FORCE WIN CELEBRATION — shown on winner device -->
+<div id="force-win-cel">
+  <video id="fw-video" autoplay loop muted playsinline></video>
+  <div id="fw-title">PROGRESSIVE JACKPOT!</div>
+  <div id="fw-amt">$0.00</div>
+  <div id="fw-sub">YOU WON THE FORCE JACKPOT!</div>
+  <button id="fw-dismiss" onclick="document.getElementById('force-win-cel').classList.remove('show')">
+    COLLECT &#127881;
+  </button>
+</div>
+
+<script>
+(function(){
+  var CEL_VIDEOS = ["assets/videos/josie_dance.mp4","assets/videos/sasha_dance.mp4","assets/videos/sasha_alt.mp4"];
+  var _celIdx = 0;
+
+  function showForceWin(amt) {
+    var el  = document.getElementById('force-win-cel');
+    var vid = document.getElementById('fw-video');
+    var amtEl = document.getElementById('fw-amt');
+    if (amtEl) amtEl.textContent = '$' + amt.toFixed(2);
+    if (vid) {
+      vid.src = CEL_VIDEOS[Math.floor(Math.random() * CEL_VIDEOS.length)];
+      vid.load(); vid.play();
+    }
+    if (el) el.classList.add('show');
+  }
+
+  function showAttitudeCheck(amt, winnerGame) {
+    var el    = document.getElementById('attitude-check');
+    var amtEl = document.getElementById('ac-jackpot-amt');
+    if (amtEl) amtEl.textContent = '$' + (amt || 0).toFixed(2);
+    if (el) el.classList.add('show');
+  }
+
+  if (typeof Progressive !== 'undefined') {
+    Progressive.onForceWin(showForceWin);
+    Progressive.onForceNotify(showAttitudeCheck);
+  }
+}());
+</script>
+
 </body>
 </html>
