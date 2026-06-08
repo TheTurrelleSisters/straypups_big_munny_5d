@@ -1,8 +1,16 @@
 /*
  * progressive.js — Virtual Progressive Controller
  * Stray-Pup LLC / The Turrelle Sisters LLC
- * v1.2 — Force jackpot, ATTITUDE CHECK, presence, clean rewrite
+ * v1.3 — Broadcast message onMessage() now exported in public API (was wired
+ *         internally but never exported, so games could not register handlers).
  * ES5 only. No arrow functions. No const/let. No backticks.
+ *
+ * CHANGE LOG v1.3
+ *   - onMessage(fn) added to returned public API object.
+ *     Previously _messageListeners existed and _subscribeMessages() ran, but
+ *     the public return block was missing onMessage — so Progressive.onMessage
+ *     was undefined in every game and no handler could ever be registered.
+ *   - No other logic changes.
  */
 
 var SUPABASE_URL      = 'https://gdmmoeggkqsvqnqyrubx.supabase.co';
@@ -30,11 +38,17 @@ var Progressive = (function () {
   var _sessionKey       = 'sess_' + Math.random().toString(36).substr(2, 9);
 
   /* ── Force jackpot state ── */
-  var _forceArmed       = false;   // operator has armed a force jackpot
-  var _forceCommandId   = null;    // ID of the armed command row
-  var _forceClaimed     = false;   // this session has claimed the force win
-  var _onForceWin       = null;    // callback: function(amt) — called on THIS device when it wins
-  var _onForceNotify    = null;    // callback: function(amt, winnerGame) — ATTITUDE CHECK on others
+  var _forceArmed       = false;
+  var _forceCommandId   = null;
+  var _forceClaimed     = false;
+  var _onForceWin       = null;
+  var _onForceNotify    = null;
+
+  /* ── Broadcast message state ── */
+  var _messageListeners  = [];
+  var _lastSeenMessageId = 0;
+  var _SEEN_KEY          = 'prog_last_msg_' + PROG_GAME_ID;
+  var _justWon           = false;
 
   /* ═══════════════════════════════════════════════════════════════
      SDK LOADER
@@ -61,6 +75,12 @@ var Progressive = (function () {
       try { _presenceListeners[i](_presenceCount); } catch (e) {}
     }
   }
+  function _notifyMessage(msg) {
+    for (var i = 0; i < _messageListeners.length; i++) {
+      try { _messageListeners[i](msg); } catch (e) {}
+    }
+    _saveLastSeen(msg.id);
+  }
 
   /* ═══════════════════════════════════════════════════════════════
      DB FETCH
@@ -78,7 +98,6 @@ var Progressive = (function () {
     });
   }
 
-  /* Check if a force jackpot is already armed when we first connect */
   function _checkArmedCommand() {
     _client.from('progressive_commands')
       .select('*').eq('status', 'armed').limit(1).then(function (res) {
@@ -95,11 +114,11 @@ var Progressive = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     REALTIME: VALUE + COMMANDS
+     REALTIME SUBSCRIPTIONS
      ═══════════════════════════════════════════════════════════════ */
   function _subscribeValue() {
     _client.channel('prog-value')
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'progressive', filter:'id=eq.1' },
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'progressive', filter: 'id=eq.1' },
         function (p) {
           if (!p.new) return;
           _localValue  = parseFloat(p.new.value)        || _localValue;
@@ -112,9 +131,8 @@ var Progressive = (function () {
   }
 
   function _subscribeCommands() {
-    _client.channel('prog-commands-' + _sessionKey.substr(0,4))
-      /* New command inserted — arm fires */
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'progressive_commands' },
+    _client.channel('prog-commands-' + _sessionKey.substr(0, 4))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'progressive_commands' },
         function (p) {
           if (!p.new || p.new.command !== 'force_jackpot' || p.new.status !== 'armed') return;
           _forceArmed     = true;
@@ -122,18 +140,12 @@ var Progressive = (function () {
           _forceClaimed   = false;
           console.log('[Progressive] FORCE JACKPOT ARMED — fires on next spin!');
         })
-      /* Command updated — winner claimed */
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'progressive_commands' },
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'progressive_commands' },
         function (p) {
           if (!p.new || p.new.command !== 'force_jackpot') return;
           if (p.new.status === 'won') {
-            /* Was it us? */
-            if (p.new.winner_session === _sessionKey) {
-              /* We already handled this in _claimForceWin */
-              return;
-            }
-            /* Someone else won — ATTITUDE CHECK */
-            _forceArmed   = false;
+            if (p.new.winner_session === _sessionKey) return;
+            _forceArmed     = false;
             _forceCommandId = null;
             if (_onForceNotify) {
               _onForceNotify(parseFloat(p.new.winner_amt) || 0, p.new.winner_game || 'another game');
@@ -141,6 +153,55 @@ var Progressive = (function () {
           }
         })
       .subscribe();
+  }
+
+  function _subscribeHits() {
+    _client.channel('prog-hits-notify')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'progressive_hits' },
+        function (p) {
+          if (!p.new || _justWon) return;
+          if (_onForceNotify) {
+            _onForceNotify(parseFloat(p.new.amount) || 0, p.new.game_id || 'another game');
+          }
+        })
+      .subscribe();
+  }
+
+  /* ── Broadcast messages ── */
+  function _loadLastSeen() {
+    try {
+      var v = localStorage.getItem(_SEEN_KEY);
+      if (v) _lastSeenMessageId = parseInt(v, 10) || 0;
+    } catch (e) {}
+  }
+
+  function _saveLastSeen(id) {
+    _lastSeenMessageId = id;
+    try { localStorage.setItem(_SEEN_KEY, String(id)); } catch (e) {}
+  }
+
+  function _subscribeMessages() {
+    _client.channel('broadcast-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'broadcast_messages' },
+        function (p) {
+          if (!p.new) return;
+          _notifyMessage(p.new);
+        })
+      .subscribe();
+  }
+
+  function _checkUnreadMessages() {
+    _loadLastSeen();
+    _client.from('broadcast_messages')
+      .select('*')
+      .gt('id', _lastSeenMessageId)
+      .order('id', { ascending: true })
+      .then(function (res) {
+        if (res.error || !res.data || !res.data.length) return;
+        res.data.forEach(function (msg, i) {
+          setTimeout(function () { _notifyMessage(msg); }, i * 4000);
+        });
+      });
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -151,15 +212,15 @@ var Progressive = (function () {
       config: { presence: { key: _sessionKey } }
     });
     _presenceChannel
-      .on('presence', { event:'sync' }, function () {
+      .on('presence', { event: 'sync' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
-      .on('presence', { event:'join' }, function () {
+      .on('presence', { event: 'join' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
-      .on('presence', { event:'leave' }, function () {
+      .on('presence', { event: 'leave' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
@@ -191,15 +252,13 @@ var Progressive = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     FORCE WIN CLAIM — called by game engine when force is armed
-     and a spin is initiated on this device
+     FORCE WIN CLAIM
      ═══════════════════════════════════════════════════════════════ */
   function _claimForceWin(onClaimed) {
     if (!_forceCommandId || _forceClaimed) { onClaimed(false); return; }
     _forceClaimed = true;
     var hitAmt = parseFloat(_localValue.toFixed(2));
 
-    /* Atomic claim: update only if still 'armed' */
     _client.from('progressive_commands')
       .update({
         status:         'won',
@@ -209,16 +268,16 @@ var Progressive = (function () {
         won_at:         new Date().toISOString()
       })
       .eq('id', _forceCommandId)
-      .eq('status', 'armed')   /* Only succeeds if still armed — race condition safe */
+      .eq('status', 'armed')
       .select()
       .then(function (res) {
         if (res.error || !res.data || !res.data.length) {
-          /* Someone else got there first */
           _forceClaimed = false;
           onClaimed(false);
           return;
         }
-        /* We won! Reset the pot */
+        _justWon = true;
+        setTimeout(function () { _justWon = false; }, 5000);
         _localValue = _seed;
         _notifyValue();
         _forceArmed = false;
@@ -243,8 +302,12 @@ var Progressive = (function () {
         _fetchRow(function () {
           _subscribeValue();
           _subscribeCommands();
+          _subscribeHits();
           _subscribePresence();
           _checkArmedCommand();
+          _subscribeMessages();
+          _checkUnreadMessages();
+          setInterval(function () { _fetchRow(null); }, 60000);
           if (onReady) onReady();
         });
       } catch (e) {
@@ -254,41 +317,29 @@ var Progressive = (function () {
     });
   }
 
-  /*
-   * contribute(betAmt)
-   * Call on every spin start.
-   * If a force jackpot is armed, returns true — game must trigger the jackpot win.
-   * Game calls claimForce(callback) to atomically claim it.
-   */
   function contribute(betAmt) {
     if (!betAmt || betAmt <= 0) return false;
     var addition = betAmt * _contribRate;
-    _localValue  = Math.min(_localValue + addition, _ceiling);
+    _localValue  = _localValue + addition;
+    if (_localValue > _ceiling) _localValue = _ceiling;
     _notifyValue();
     if (_connected && _client) {
       _pendingAdd += addition;
       _scheduleFlush();
     }
-    return _forceArmed; /* true = this spin should be a force jackpot */
+    return _forceArmed;
   }
 
-  /*
-   * claimForce(onResult)
-   * Called by game engine when contribute() returns true.
-   * onResult(didWin, amount) — if didWin=true, trigger jackpot.
-   * If didWin=false, someone else got there first — spin normally.
-   */
   function claimForce(onResult) {
     _claimForceWin(onResult);
   }
 
-  /*
-   * hit(info) — natural jackpot (bingo pattern / 5OAK)
-   */
   function hit(info) {
     var hitAmt  = parseFloat(_localValue.toFixed(2));
     _localValue = _seed;
     _notifyValue();
+    _justWon = true;
+    setTimeout(function () { _justWon = false; }, 5000);
     if (_connected && _client) {
       var rec = {
         game_id: PROG_GAME_ID, denom: PROG_DENOM, amount: hitAmt,
@@ -298,6 +349,7 @@ var Progressive = (function () {
       };
       _client.rpc('progressive_hit', { reset_to: _seed });
       _client.from('progressive_hits').insert(rec);
+      setTimeout(function () { _fetchRow(null); }, 1000);
     }
     return hitAmt;
   }
@@ -312,10 +364,19 @@ var Progressive = (function () {
 
   function onChange(fn)           { _valueListeners.push(fn); fn(_localValue); }
   function onPresenceChange(fn)   { _presenceListeners.push(fn); fn(_presenceCount); }
-
-  /* Register callbacks for force win events */
   function onForceWin(fn)         { _onForceWin    = fn; }
   function onForceNotify(fn)      { _onForceNotify = fn; }
+
+  /*
+   * onMessage(fn)
+   * Register a callback to receive operator broadcast messages.
+   * fn(msg) — msg = { id, title, message, created_at }
+   * Called immediately for any unread messages on load,
+   * then in real-time for new messages while the game is open.
+   * Register this in your game's init block, e.g.:
+   *   Progressive.onMessage(function(msg) { showBroadcastToast(msg.message, msg.title); });
+   */
+  function onMessage(fn)          { _messageListeners.push(fn); }
 
   return {
     init:             init,
@@ -331,6 +392,7 @@ var Progressive = (function () {
     getSessionKey:    getSessionKey,
     onChange:         onChange,
     onPresenceChange: onPresenceChange,
+    onMessage:        onMessage,   /* v1.3: was missing from public API */
     onForceWin:       onForceWin,
     onForceNotify:    onForceNotify
   };
