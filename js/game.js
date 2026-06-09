@@ -1379,7 +1379,10 @@ function initProgressiveMeter(){
     var lbl    = document.getElementById('prog-meter-lbl');
     var val    = document.getElementById('prog-meter-val');
     if (banner) banner.classList.toggle('show', !isOnline);
-    if (lbl)    lbl.classList.toggle('local-mode', !isOnline);
+    if (lbl) {
+      lbl.classList.toggle('local-mode', !isOnline);
+      lbl.textContent = isOnline ? '★ PROGRESSIVE JACKPOT ★' : '★ LOCAL JACKPOT ★';
+    }
     if (val)    val.classList.toggle('local-mode', !isOnline);
     updateBallCallBadge();
     if (typeof Progressive !== 'undefined') updateProgMeter(Progressive.getValue());

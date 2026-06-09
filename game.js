@@ -1421,8 +1421,11 @@ function initProgressiveMeter(){
     var lbl=document.getElementById('prog-meter-lbl');
     var val=document.getElementById('prog-meter-val');
     if(banner) banner.classList.toggle('show',!isOnline);
-    if(lbl)    lbl.classList.toggle('local-mode',!isOnline);
-    if(val)    val.classList.toggle('local-mode',!isOnline);
+    if(lbl){
+      lbl.classList.toggle('local-mode',!isOnline);
+      lbl.textContent=isOnline?'\u2605 PROGRESSIVE JACKPOT \u2605':'\u2605 LOCAL JACKPOT \u2605';
+    }
+    if(val) val.classList.toggle('local-mode',!isOnline);
     updateBallCallBadge();
     if(typeof Progressive!=='undefined') updateProgMeter(Progressive.getValue());
   });

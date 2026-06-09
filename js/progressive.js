@@ -464,7 +464,12 @@ var Progressive = (function () {
       } else if (nowConnected && _localMode) {
         _goOnlineMode();
       }
-    }, 5000);
+    }, 2000);
+    /* Also use browser online/offline events for instant detection */
+    if (typeof window !== 'undefined') {
+      window.addEventListener('offline', function() { if (!_localMode) _goLocalMode(); });
+      window.addEventListener('online',  function() { setTimeout(function() { if (_localMode) _goOnlineMode(); }, 1000); });
+    }
   }
 
   /* ═══════════════════════════════════════════════════════════════
