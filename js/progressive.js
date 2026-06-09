@@ -1,16 +1,18 @@
 /*
  * progressive.js — Virtual Progressive Controller
  * Stray-Pup LLC / The Turrelle Sisters LLC
- * v1.3 — FIX: async hit/claimForce handshake, no game lockup, meter resets correctly
+ * v1.4 — Server ball call, player registry, offline fallback
  * ES5 only. No arrow functions. No const/let. No backticks.
  *
- * CHANGES FROM v1.2:
- *   - hit() now accepts a callback — game.js must pass one so spin resolution
- *     waits for DB confirmation before proceeding (fixes lockup + stale meter).
- *   - _claimForceWin() calls progressive_hit RPC and inserts hit record BEFORE
- *     calling onClaimed(true) — DB is confirmed reset before game proceeds.
- *   - _forceCommandId nulled after a force win so stale claim is impossible.
- *   - Safety timeout in _claimForceWin: if DB takes >8s, unlocks game gracefully.
+ * CHANGES FROM v1.3:
+ *   - getBallCall(cb): fetches server ball sequence via RPC,
+ *     falls back to local CSPRNG if offline or RPC fails.
+ *   - registerPlayer(cb): registers session → Player N in DB,
+ *     falls back to local counter if offline.
+ *   - refreshBallCall(): called when ball 75 exhausted,
+ *     fetches new server sequence or generates locally.
+ *   - isOnline(): live connectivity check used throughout.
+ *   - All offline fallbacks are seamless — game never stalls.
  */
 
 var SUPABASE_URL      = 'https://gdmmoeggkqsvqnqyrubx.supabase.co';
@@ -20,31 +22,74 @@ var SUPABASE_ANON_KEY = 'sb_publishable_NGsKBAUUsVUvD5XKTblIdw_aBDPldSd';
 var PROG_GAME_ID = (typeof PROG_GAME_ID !== 'undefined') ? PROG_GAME_ID : 'unknown';
 var PROG_DENOM   = (typeof PROG_DENOM   !== 'undefined') ? PROG_DENOM   : 1.00;
 
+/* Game title map for hit records */
+var PROG_GAME_TITLES = {
+  'straypups_1d': 'StrayPups Big Munny $1',
+  'straypups_5d': 'StrayPups Big Munny $5',
+  'turrelle':     'Turrelle Sisters',
+  'unknown':      'Unknown Game'
+};
+
 var Progressive = (function () {
 
   /* ── Private state ── */
-  var _client           = null;
-  var _connected        = false;
-  var _localValue       = 500.00;
-  var _seed             = 500.00;
-  var _ceiling          = 9999.00;
-  var _contribRate      = 0.02;
-  var _pendingAdd       = 0;
-  var _flushTimer       = null;
-  var _valueListeners   = [];
-  var _presenceChannel  = null;
-  var _presenceCount    = 0;
-  var _presenceListeners= [];
-  var _sessionKey       = 'sess_' + Math.random().toString(36).substr(2, 9);
+  var _client            = null;
+  var _connected         = false;
+  var _localValue        = 500.00;
+  var _seed              = 500.00;
+  var _ceiling           = 9999.00;
+  var _contribRate       = 0.02;
+  var _pendingAdd        = 0;
+  var _flushTimer        = null;
+  var _valueListeners    = [];
+  var _presenceChannel   = null;
+  var _presenceCount     = 0;
+  var _presenceListeners = [];
+  var _sessionKey        = 'sess_' + Math.random().toString(36).substr(2, 9);
+
+  /* ── Player registry state ── */
+  var _playerNum         = 0;     /* assigned after register_player RPC */
+  var _playerLabel       = '';    /* "Player 3" — set after registration */
+  var _playerRegistered  = false;
+
+  /* ── Ball call state ── */
+  var _serverBallCall    = null;  /* array of 75 numbers from DB, or null */
+  var _usingServerBalls  = false; /* true when currently using server sequence */
+  var _ballCallListeners = [];    /* callbacks when new sequence arrives */
 
   /* ── Force jackpot state ── */
-  var _forceArmed       = false;
-  var _forceCommandId   = null;
-  var _forceClaimed     = false;
-  var _onForceWin       = null;
-  var _onForceNotify    = null;
+  var _forceArmed        = false;
+  var _forceCommandId    = null;
+  var _forceClaimed      = false;
+  var _onForceWin        = null;
+  var _onForceNotify     = null;
+  var _justWon           = false;
 
-  var _justWon = false;
+  /* ── Local fallback RNG (mirrors game.js RNG) ── */
+  var _rng = (function() {
+    var b = new Uint32Array(64); var i = 64;
+    function fill() { crypto.getRandomValues(b); i = 0; }
+    function next() { if (i >= b.length) fill(); return b[i++] / 0x100000000; }
+    function int(lo, hi) { return Math.floor(next() * (hi - lo + 1)) + lo; }
+    function shuffle(arr) {
+      for (var j = arr.length - 1; j > 0; j--) {
+        var k = int(0, j); var t = arr[j]; arr[j] = arr[k]; arr[k] = t;
+      }
+      return arr;
+    }
+    return { next: next, int: int, shuffle: shuffle };
+  }());
+
+  function _localBallShuffle() {
+    var balls = [];
+    for (var i = 1; i <= 75; i++) balls.push(i);
+    return _rng.shuffle(balls);
+  }
+
+  /* ── Connectivity check ── */
+  function _isOnline() {
+    return _connected && _client !== null;
+  }
 
   /* ═══════════════════════════════════════════════════════════════
      SDK LOADER
@@ -54,7 +99,10 @@ var Progressive = (function () {
     var s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
     s.onload  = cb;
-    s.onerror = function () { console.warn('[Progressive] SDK load failed — offline.'); };
+    s.onerror = function () {
+      console.warn('[Progressive] SDK load failed — offline mode.');
+      cb(); /* still call cb so game proceeds with local fallback */
+    };
     document.head.appendChild(s);
   }
 
@@ -71,13 +119,192 @@ var Progressive = (function () {
       try { _presenceListeners[i](_presenceCount); } catch (e) {}
     }
   }
+  function _notifyBallCall(seq) {
+    for (var i = 0; i < _ballCallListeners.length; i++) {
+      try { _ballCallListeners[i](seq); } catch (e) {}
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     BALL CALL — SERVER + OFFLINE FALLBACK
+     ═══════════════════════════════════════════════════════════════ */
+
+  /*
+   * getBallCall(cb)
+   * Fetches the current server ball sequence for this game_id.
+   * cb(sequence, isServer) — sequence is array[75], isServer=true if from DB.
+   * Falls back to local shuffle immediately if offline.
+   * Timeout: if DB takes >3s, falls back locally and still delivers server
+   * sequence asynchronously when it arrives (game is never stalled).
+   */
+  function getBallCall(cb) {
+    if (!_isOnline()) {
+      /* Offline — use local immediately */
+      var local = _localBallShuffle();
+      _usingServerBalls = false;
+      if (cb) cb(local, false);
+      return;
+    }
+
+    var _timedOut = false;
+    var _cbFired  = false;
+
+    /* 3-second timeout — fall back locally, still await server async */
+    var _timer = setTimeout(function () {
+      if (_cbFired) return;
+      _timedOut = true;
+      console.warn('[Progressive] getBallCall timeout — using local fallback');
+      var local = _localBallShuffle();
+      _usingServerBalls = false;
+      _cbFired = true;
+      if (cb) cb(local, false);
+    }, 3000);
+
+    _client.rpc('get_or_create_ball_call', { p_game_id: PROG_GAME_ID })
+      .then(function (res) {
+        clearTimeout(_timer);
+        if (res.error || !res.data || !Array.isArray(res.data)) {
+          console.warn('[Progressive] getBallCall RPC error:', res.error && res.error.message);
+          if (!_cbFired) {
+            var local2 = _localBallShuffle();
+            _usingServerBalls = false;
+            _cbFired = true;
+            if (cb) cb(local2, false);
+          }
+          return;
+        }
+        _serverBallCall = res.data;
+        _usingServerBalls = true;
+        if (!_cbFired) {
+          _cbFired = true;
+          if (cb) cb(_serverBallCall.slice(), true);
+        } else {
+          /* Timeout already fired with local — notify listeners of server seq */
+          _notifyBallCall(_serverBallCall.slice());
+        }
+      })
+      .catch(function (err) {
+        clearTimeout(_timer);
+        console.warn('[Progressive] getBallCall catch:', err);
+        if (!_cbFired) {
+          var local3 = _localBallShuffle();
+          _usingServerBalls = false;
+          _cbFired = true;
+          if (cb) cb(local3, false);
+        }
+      });
+  }
+
+  /*
+   * refreshBallCall(cb)
+   * Called when ball 75 is exhausted. Gets a fresh server sequence.
+   * Falls back to local if offline.
+   */
+  function refreshBallCall(cb) {
+    if (!_isOnline()) {
+      var local = _localBallShuffle();
+      _usingServerBalls = false;
+      if (cb) cb(local, false);
+      return;
+    }
+
+    _client.rpc('upsert_ball_call', { p_game_id: PROG_GAME_ID })
+      .then(function (res) {
+        if (res.error || !res.data || !Array.isArray(res.data)) {
+          console.warn('[Progressive] refreshBallCall error — using local');
+          var local2 = _localBallShuffle();
+          _usingServerBalls = false;
+          if (cb) cb(local2, false);
+          return;
+        }
+        _serverBallCall = res.data;
+        _usingServerBalls = true;
+        if (cb) cb(_serverBallCall.slice(), true);
+      })
+      .catch(function () {
+        var local3 = _localBallShuffle();
+        _usingServerBalls = false;
+        if (cb) cb(local3, false);
+      });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     PLAYER REGISTRATION
+     ═══════════════════════════════════════════════════════════════ */
+
+  /*
+   * registerPlayer(cb)
+   * Registers this session in player_registry and returns player_num.
+   * cb(playerNum, playerLabel) — e.g. cb(3, "Player 3")
+   * Falls back to local counter if offline.
+   * Safe to call multiple times — only registers once per session.
+   */
+  var _localPlayerCounter = 1; /* shared local counter for offline sessions */
+
+  function registerPlayer(cb) {
+    if (_playerRegistered) {
+      if (cb) cb(_playerNum, _playerLabel);
+      return;
+    }
+
+    if (!_isOnline()) {
+      _playerNum       = _localPlayerCounter++;
+      _playerLabel     = 'Player ' + _playerNum;
+      _playerRegistered = true;
+      console.warn('[Progressive] registerPlayer offline — assigned ' + _playerLabel + ' locally');
+      if (cb) cb(_playerNum, _playerLabel);
+      return;
+    }
+
+    /* 4-second timeout for registration */
+    var _cbFired = false;
+    var _timer = setTimeout(function () {
+      if (_cbFired) return;
+      _playerNum       = _localPlayerCounter++;
+      _playerLabel     = 'Player ' + _playerNum + ' (local)';
+      _playerRegistered = true;
+      _cbFired = true;
+      console.warn('[Progressive] registerPlayer timeout — using local label');
+      if (cb) cb(_playerNum, _playerLabel);
+    }, 4000);
+
+    _client.rpc('register_player', {
+      p_session_key: _sessionKey,
+      p_game_id:     PROG_GAME_ID,
+      p_denom:       PROG_DENOM
+    }).then(function (res) {
+      clearTimeout(_timer);
+      if (_cbFired) return;
+      if (res.error) {
+        console.warn('[Progressive] register_player error:', res.error.message);
+        _playerNum   = _localPlayerCounter++;
+        _playerLabel = 'Player ' + _playerNum + ' (local)';
+      } else {
+        _playerNum   = res.data;
+        _playerLabel = 'Player ' + _playerNum;
+      }
+      _playerRegistered = true;
+      _cbFired = true;
+      if (cb) cb(_playerNum, _playerLabel);
+    }).catch(function (err) {
+      clearTimeout(_timer);
+      if (_cbFired) return;
+      console.warn('[Progressive] registerPlayer catch:', err);
+      _playerNum       = _localPlayerCounter++;
+      _playerLabel     = 'Player ' + _playerNum + ' (local)';
+      _playerRegistered = true;
+      _cbFired = true;
+      if (cb) cb(_playerNum, _playerLabel);
+    });
+  }
 
   /* ═══════════════════════════════════════════════════════════════
      DB FETCH
      ═══════════════════════════════════════════════════════════════ */
   function _fetchRow(cb) {
+    if (!_client) { if (cb) cb(); return; }
     _client.from('progressive').select('*').eq('id', 1).single().then(function (res) {
-      if (res.error) { console.warn('[Progressive] fetchRow:', res.error.message); if (cb) cb(); return; }
+      if (res.error) { if (cb) cb(); return; }
       var d = res.data;
       _localValue  = parseFloat(d.value)        || _seed;
       _seed        = parseFloat(d.seed)         || _seed;
@@ -88,82 +315,85 @@ var Progressive = (function () {
     });
   }
 
-  /* Check if a force jackpot is already armed when we first connect */
   function _checkArmedCommand() {
+    if (!_client) return;
     _client.from('progressive_commands')
       .select('*').eq('status', 'armed').limit(1).then(function (res) {
-        if (res.error) {
-          console.warn('[Progressive] commands table error:', res.error.message,
-            '- Run SQL queries A-F from SUPABASE_SETUP.md to create it.');
-          return;
-        }
-        if (!res.data || !res.data.length) return;
+        if (res.error || !res.data || !res.data.length) return;
         _forceArmed     = true;
         _forceCommandId = res.data[0].id;
-        console.log('[Progressive] Force jackpot ARMED on load — fires on next spin!');
       });
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     REALTIME: VALUE + COMMANDS
+     REALTIME
      ═══════════════════════════════════════════════════════════════ */
-  function _subscribeHits() {
-    _client.channel('prog-hits-notify')
+  function _subscribeValue() {
+    _client.channel('prog-value')
       .on('postgres_changes', {
-        event:  'INSERT',
-        schema: 'public',
-        table:  'progressive_hits'
+        event: 'UPDATE', schema: 'public', table: 'progressive', filter: 'id=eq.1'
       }, function (p) {
         if (!p.new) return;
-        if (_justWon) return;
-        if (_onForceNotify) {
-          _onForceNotify(
-            parseFloat(p.new.amount) || 0,
-            p.new.game_id || 'another game'
-          );
+        _localValue  = parseFloat(p.new.value)        || _localValue;
+        _seed        = parseFloat(p.new.seed)         || _seed;
+        _ceiling     = parseFloat(p.new.ceiling)      || _ceiling;
+        _contribRate = parseFloat(p.new.contrib_rate) || _contribRate;
+        _notifyValue();
+      }).subscribe();
+  }
+
+  function _subscribeBallCall() {
+    /* Listen for new server sequences issued by other sessions */
+    _client.channel('prog-ball-call')
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'ball_call',
+        filter: 'game_id=eq.' + PROG_GAME_ID
+      }, function (p) {
+        if (!p.new || !p.new.sequence) return;
+        var seq = p.new.sequence;
+        if (!Array.isArray(seq)) return;
+        _serverBallCall   = seq;
+        _usingServerBalls = true;
+        /* Notify game.js so it can adopt the new sequence seamlessly */
+        _notifyBallCall(seq.slice());
+      }).subscribe();
+  }
+
+  function _subscribeCommands() {
+    _client.channel('prog-commands-' + _sessionKey.substr(0, 4))
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'progressive_commands'
+      }, function (p) {
+        if (!p.new || p.new.command !== 'force_jackpot' || p.new.status !== 'armed') return;
+        _forceArmed     = true;
+        _forceCommandId = p.new.id;
+        _forceClaimed   = false;
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'progressive_commands'
+      }, function (p) {
+        if (!p.new || p.new.command !== 'force_jackpot') return;
+        if (p.new.status === 'won' && p.new.winner_session !== _sessionKey) {
+          _forceArmed     = false;
+          _forceCommandId = null;
+          if (_onForceNotify) {
+            _onForceNotify(parseFloat(p.new.winner_amt) || 0, p.new.winner_game || 'another game');
+          }
         }
       })
       .subscribe();
   }
 
-  function _subscribeValue() {
-    _client.channel('prog-value')
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'progressive', filter:'id=eq.1' },
-        function (p) {
-          if (!p.new) return;
-          _localValue  = parseFloat(p.new.value)        || _localValue;
-          _seed        = parseFloat(p.new.seed)         || _seed;
-          _ceiling     = parseFloat(p.new.ceiling)      || _ceiling;
-          _contribRate = parseFloat(p.new.contrib_rate) || _contribRate;
-          _notifyValue();
-        })
-      .subscribe();
-  }
-
-  function _subscribeCommands() {
-    _client.channel('prog-commands-' + _sessionKey.substr(0,4))
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'progressive_commands' },
-        function (p) {
-          if (!p.new || p.new.command !== 'force_jackpot' || p.new.status !== 'armed') return;
-          _forceArmed     = true;
-          _forceCommandId = p.new.id;
-          _forceClaimed   = false;
-          console.log('[Progressive] FORCE JACKPOT ARMED — fires on next spin!');
-        })
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'progressive_commands' },
-        function (p) {
-          if (!p.new || p.new.command !== 'force_jackpot') return;
-          if (p.new.status === 'won') {
-            if (p.new.winner_session === _sessionKey) return; /* we handled it */
-            /* Someone else won — clear arm state + ATTITUDE CHECK */
-            _forceArmed     = false;
-            _forceCommandId = null;
-            if (_onForceNotify) {
-              _onForceNotify(parseFloat(p.new.winner_amt) || 0, p.new.winner_game || 'another game');
-            }
-          }
-        })
-      .subscribe();
+  function _subscribeHits() {
+    _client.channel('prog-hits-notify')
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'progressive_hits'
+      }, function (p) {
+        if (!p.new || _justWon) return;
+        if (_onForceNotify) {
+          _onForceNotify(parseFloat(p.new.amount) || 0, p.new.game_id || 'another game');
+        }
+      }).subscribe();
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -174,24 +404,26 @@ var Progressive = (function () {
       config: { presence: { key: _sessionKey } }
     });
     _presenceChannel
-      .on('presence', { event:'sync' }, function () {
+      .on('presence', { event: 'sync' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
-      .on('presence', { event:'join' }, function () {
+      .on('presence', { event: 'join' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
-      .on('presence', { event:'leave' }, function () {
+      .on('presence', { event: 'leave' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
       .subscribe(function (status) {
         if (status === 'SUBSCRIBED') {
           _presenceChannel.track({
-            gameId:   PROG_GAME_ID,
-            denom:    PROG_DENOM,
-            joinedAt: new Date().toISOString()
+            gameId:      PROG_GAME_ID,
+            denom:       PROG_DENOM,
+            joinedAt:    new Date().toISOString(),
+            playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
+            sessionKey:  _sessionKey
           });
         }
       });
@@ -204,7 +436,7 @@ var Progressive = (function () {
     if (_flushTimer) return;
     _flushTimer = setTimeout(function () {
       _flushTimer = null;
-      if (_pendingAdd <= 0 || !_client) return;
+      if (_pendingAdd <= 0 || !_client || !_connected) return;
       var toAdd   = parseFloat(_pendingAdd.toFixed(4));
       _pendingAdd = 0;
       _client.rpc('progressive_contribute', { add_amount: toAdd }).then(function (res) {
@@ -214,93 +446,62 @@ var Progressive = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     FORCE WIN CLAIM
-     FIX v1.3: DB reset is awaited before onClaimed(true) fires.
-     _forceCommandId is nulled after win to prevent stale claims.
-     Safety timeout unlocks game if DB takes >8s.
+     FORCE WIN CLAIM (unchanged from v1.3)
      ═══════════════════════════════════════════════════════════════ */
   function _claimForceWin(onClaimed) {
     if (!_forceCommandId || _forceClaimed) { onClaimed(false); return; }
     _forceClaimed = true;
     var hitAmt    = parseFloat(_localValue.toFixed(2));
 
-    /* Safety net: if DB hangs for 8s, unlock game gracefully */
     var _safetyTimer = setTimeout(function () {
-      console.warn('[Progressive] claimForce DB timeout — unlocking game');
-      _forceClaimed   = false;
-      _forceArmed     = false;
-      _forceCommandId = null;
+      _forceClaimed = false; _forceArmed = false; _forceCommandId = null;
       onClaimed(false);
     }, 8000);
 
-    /* Step 1: Atomically claim the command row */
     _client.from('progressive_commands')
       .update({
-        status:         'won',
-        winner_session: _sessionKey,
-        winner_game:    PROG_GAME_ID,
-        winner_amt:     hitAmt,
-        won_at:         new Date().toISOString()
+        status: 'won', winner_session: _sessionKey,
+        winner_game: PROG_GAME_ID, winner_amt: hitAmt,
+        won_at: new Date().toISOString()
       })
-      .eq('id', _forceCommandId)
-      .eq('status', 'armed')
-      .select()
+      .eq('id', _forceCommandId).eq('status', 'armed').select()
       .then(function (res) {
         if (res.error || !res.data || !res.data.length) {
-          /* Someone else got there first — unlock cleanly */
           clearTimeout(_safetyTimer);
-          _forceClaimed   = false;
+          _forceClaimed = false;
           onClaimed(false);
           return;
         }
-
-        /* Step 2: Reset the pot in DB — WAIT for confirmation before proceeding */
-        _client.rpc('progressive_hit', { reset_to: _seed })
-          .then(function (rpcRes) {
-            if (rpcRes.error) {
-              console.warn('[Progressive] progressive_hit RPC error:', rpcRes.error.message);
-              /* RPC failed — still proceed but log it. Meter resets locally. */
-            }
-
-            /* Step 3: Insert hit record (fire and forget — non-blocking) */
-            _client.from('progressive_hits').insert({
-              game_id: PROG_GAME_ID,
-              denom:   PROG_DENOM,
-              amount:  hitAmt,
-              pattern: 'Force Jackpot',
-              balls:   0,
-              bet:     0
-            });
-
-            /* Step 4: Update local state */
-            clearTimeout(_safetyTimer);
-            _justWon        = true;
-            setTimeout(function () { _justWon = false; }, 5000);
-            _localValue     = _seed;
-            _notifyValue();
-            _forceArmed     = false;
-            _forceCommandId = null;  /* FIX: null this so stale claims are impossible */
-
-            /* Step 5: NOW tell the game it won */
-            onClaimed(true, hitAmt);
-          })
-          .catch(function (err) {
-            console.warn('[Progressive] RPC catch:', err);
-            clearTimeout(_safetyTimer);
-            /* Reset locally even if RPC threw */
-            _justWon        = true;
-            setTimeout(function () { _justWon = false; }, 5000);
-            _localValue     = _seed;
-            _notifyValue();
-            _forceArmed     = false;
-            _forceCommandId = null;
-            onClaimed(true, hitAmt); /* game still gets its win */
+        _client.rpc('progressive_hit', { reset_to: _seed }).then(function () {
+          _client.from('progressive_hits').insert({
+            game_id:        PROG_GAME_ID,
+            denom:          PROG_DENOM,
+            amount:         hitAmt,
+            pattern:        'Force Jackpot',
+            balls:          0,
+            bet:            0,
+            player_session: _sessionKey,
+            player_label:   _playerLabel || _sessionKey,
+            game_title:     PROG_GAME_TITLES[PROG_GAME_ID] || PROG_GAME_ID,
+            win_patterns:   'Force Jackpot'
           });
-      })
-      .catch(function (err) {
-        console.warn('[Progressive] claimForce catch:', err);
+          clearTimeout(_safetyTimer);
+          _justWon = true;
+          setTimeout(function () { _justWon = false; }, 5000);
+          _localValue = _seed; _notifyValue();
+          _forceArmed = false; _forceCommandId = null;
+          onClaimed(true, hitAmt);
+        }).catch(function () {
+          clearTimeout(_safetyTimer);
+          _justWon = true;
+          setTimeout(function () { _justWon = false; }, 5000);
+          _localValue = _seed; _notifyValue();
+          _forceArmed = false; _forceCommandId = null;
+          onClaimed(true, hitAmt);
+        });
+      }).catch(function () {
         clearTimeout(_safetyTimer);
-        _forceClaimed   = false;
+        _forceClaimed = false;
         onClaimed(false);
       });
   }
@@ -311,6 +512,12 @@ var Progressive = (function () {
 
   function init(onReady) {
     _loadSDK(function () {
+      if (!window.supabase) {
+        /* SDK failed to load — full offline mode */
+        console.warn('[Progressive] Full offline mode — no DB connection');
+        if (onReady) onReady();
+        return;
+      }
       try {
         _client    = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         _connected = true;
@@ -319,6 +526,7 @@ var Progressive = (function () {
           _subscribeCommands();
           _subscribeHits();
           _subscribePresence();
+          _subscribeBallCall();
           _checkArmedCommand();
           _subscribeMessages();
           _checkUnreadMessages();
@@ -327,6 +535,7 @@ var Progressive = (function () {
         });
       } catch (e) {
         console.warn('[Progressive] init failed:', e);
+        _connected = false;
         if (onReady) onReady();
       }
     });
@@ -335,8 +544,7 @@ var Progressive = (function () {
   function contribute(betAmt) {
     if (!betAmt || betAmt <= 0) return false;
     var addition = betAmt * _contribRate;
-    _localValue  = _localValue + addition;
-    if (_localValue > _ceiling) _localValue = _ceiling;
+    _localValue  = Math.min(_localValue + addition, _ceiling);
     _notifyValue();
     if (_connected && _client) {
       _pendingAdd += addition;
@@ -345,19 +553,8 @@ var Progressive = (function () {
     return _forceArmed;
   }
 
-  function claimForce(onResult) {
-    _claimForceWin(onResult);
-  }
+  function claimForce(onResult) { _claimForceWin(onResult); }
 
-  /*
-   * hit(info, onDone)  — natural progressive jackpot (bingo pattern)
-   *
-   * FIX v1.3: now accepts an optional onDone callback.
-   * game.js MUST pass a callback — the game unlock sequence runs inside it,
-   * ensuring the DB reset is confirmed before the spin resolves.
-   *
-   * Backward compatible: if no callback passed, behaves like v1.2 (sync return).
-   */
   function hit(info, onDone) {
     var hitAmt  = parseFloat(_localValue.toFixed(2));
     _localValue = _seed;
@@ -365,105 +562,81 @@ var Progressive = (function () {
     _justWon = true;
     setTimeout(function () { _justWon = false; }, 5000);
 
+    var patternNames = (info && info.patterns)
+      ? info.patterns.join(', ')
+      : ((info && info.pattern) ? info.pattern : 'Progressive Jackpot');
+
     if (!_connected || !_client) {
-      /* Offline — return immediately, no DB work possible */
       if (onDone) onDone(hitAmt);
       return hitAmt;
     }
 
     var rec = {
-      game_id: PROG_GAME_ID,
-      denom:   PROG_DENOM,
-      amount:  hitAmt,
-      pattern: (info && info.pattern) ? info.pattern : 'Progressive Jackpot',
-      balls:   (info && info.balls)   ? info.balls   : 0,
-      bet:     (info && info.bet)     ? info.bet      : 0
+      game_id:        PROG_GAME_ID,
+      denom:          PROG_DENOM,
+      amount:         hitAmt,
+      pattern:        (info && info.pattern) ? info.pattern : 'Progressive Jackpot',
+      balls:          (info && info.balls)   ? info.balls   : 0,
+      bet:            (info && info.bet)     ? info.bet     : 0,
+      player_session: _sessionKey,
+      player_label:   _playerLabel || _sessionKey,
+      game_title:     PROG_GAME_TITLES[PROG_GAME_ID] || PROG_GAME_ID,
+      win_patterns:   patternNames
     };
 
-    /* Safety net: if DB takes >8s, unlock game anyway */
     var _hitSafety = onDone ? setTimeout(function () {
-      console.warn('[Progressive] hit() DB timeout — unlocking game');
-      onDone(hitAmt);
-      onDone = null; /* prevent double-call */
+      console.warn('[Progressive] hit() DB timeout');
+      if (onDone) { onDone(hitAmt); onDone = null; }
     }, 8000) : null;
 
-    /* Wait for RPC reset confirmation before calling onDone */
     _client.rpc('progressive_hit', { reset_to: _seed })
       .then(function (rpcRes) {
-        if (rpcRes.error) {
-          console.warn('[Progressive] progressive_hit RPC error:', rpcRes.error.message);
-        }
-        /* Insert hit record — fire and forget */
+        if (rpcRes.error) console.warn('[Progressive] hit RPC error:', rpcRes.error.message);
         _client.from('progressive_hits').insert(rec);
-        /* Re-fetch to ensure meter is fresh */
         setTimeout(function () { _fetchRow(null); }, 1000);
-        /* Unlock game */
         if (_hitSafety) clearTimeout(_hitSafety);
         if (onDone) { onDone(hitAmt); onDone = null; }
       })
-      .catch(function (err) {
-        console.warn('[Progressive] hit RPC catch:', err);
+      .catch(function () {
         _client.from('progressive_hits').insert(rec);
         if (_hitSafety) clearTimeout(_hitSafety);
         if (onDone) { onDone(hitAmt); onDone = null; }
       });
 
-    return hitAmt; /* still returns sync for any legacy callers */
+    return hitAmt;
   }
 
-  function mustHit()              { return _localValue >= _ceiling; }
-  function getDisplay()           { return '$' + _localValue.toFixed(2); }
-  function getValue()             { return _localValue; }
-  function isConnected()          { return _connected; }
-  function getPresenceCount()     { return _presenceCount; }
-  function isForceArmed()         { return _forceArmed; }
-  function getSessionKey()        { return _sessionKey; }
-
   /* ═══════════════════════════════════════════════════════════════
-     BROADCAST MESSAGES
+     BROADCAST MESSAGES (unchanged from v1.3)
      ═══════════════════════════════════════════════════════════════ */
   var _messageListeners  = [];
   var _lastSeenMessageId = 0;
   var _SEEN_KEY          = 'prog_last_msg_' + PROG_GAME_ID;
 
   function _loadLastSeen() {
-    try {
-      var v = localStorage.getItem(_SEEN_KEY);
-      if (v) _lastSeenMessageId = parseInt(v, 10) || 0;
-    } catch(e) {}
+    try { var v = localStorage.getItem(_SEEN_KEY); if (v) _lastSeenMessageId = parseInt(v, 10) || 0; } catch(e) {}
   }
-
   function _saveLastSeen(id) {
     _lastSeenMessageId = id;
     try { localStorage.setItem(_SEEN_KEY, String(id)); } catch(e) {}
   }
-
   function _notifyMessage(msg) {
     for (var i = 0; i < _messageListeners.length; i++) {
       try { _messageListeners[i](msg); } catch(e) {}
     }
     _saveLastSeen(msg.id);
   }
-
   function _subscribeMessages() {
     _client.channel('broadcast-messages')
       .on('postgres_changes', {
-        event:  'INSERT',
-        schema: 'public',
-        table:  'broadcast_messages'
-      }, function(p) {
-        if (!p.new) return;
-        _notifyMessage(p.new);
-      })
+        event: 'INSERT', schema: 'public', table: 'broadcast_messages'
+      }, function(p) { if (p.new) _notifyMessage(p.new); })
       .subscribe();
   }
-
   function _checkUnreadMessages() {
     _loadLastSeen();
-    _client.from('broadcast_messages')
-      .select('*')
-      .gt('id', _lastSeenMessageId)
-      .order('id', { ascending: true })
+    _client.from('broadcast_messages').select('*')
+      .gt('id', _lastSeenMessageId).order('id', { ascending: true })
       .then(function(res) {
         if (res.error || !res.data || !res.data.length) return;
         res.data.forEach(function(msg, i) {
@@ -472,28 +645,48 @@ var Progressive = (function () {
       });
   }
 
-  function onMessage(fn)          { _messageListeners.push(fn); }
-  function onChange(fn)           { _valueListeners.push(fn); fn(_localValue); }
-  function onPresenceChange(fn)   { _presenceListeners.push(fn); fn(_presenceCount); }
-  function onForceWin(fn)         { _onForceWin    = fn; }
-  function onForceNotify(fn)      { _onForceNotify = fn; }
+  /* ── Accessors ── */
+  function mustHit()            { return _localValue >= _ceiling; }
+  function getDisplay()         { return '$' + _localValue.toFixed(2); }
+  function getValue()           { return _localValue; }
+  function isConnected()        { return _connected; }
+  function getPresenceCount()   { return _presenceCount; }
+  function isForceArmed()       { return _forceArmed; }
+  function getSessionKey()      { return _sessionKey; }
+  function getPlayerNum()       { return _playerNum; }
+  function getPlayerLabel()     { return _playerLabel; }
+  function isUsingServerBalls() { return _usingServerBalls; }
+
+  function onChange(fn)         { _valueListeners.push(fn); fn(_localValue); }
+  function onPresenceChange(fn) { _presenceListeners.push(fn); fn(_presenceCount); }
+  function onMessage(fn)        { _messageListeners.push(fn); }
+  function onForceWin(fn)       { _onForceWin    = fn; }
+  function onForceNotify(fn)    { _onForceNotify = fn; }
+  function onBallCallUpdate(fn) { _ballCallListeners.push(fn); }
 
   return {
-    init:             init,
-    contribute:       contribute,
-    claimForce:       claimForce,
-    hit:              hit,
-    mustHit:          mustHit,
-    getDisplay:       getDisplay,
-    getValue:         getValue,
-    isConnected:      isConnected,
-    isForceArmed:     isForceArmed,
-    getPresenceCount: getPresenceCount,
-    getSessionKey:    getSessionKey,
-    onChange:         onChange,
-    onPresenceChange: onPresenceChange,
-    onMessage:        onMessage,
-    onForceWin:       onForceWin,
-    onForceNotify:    onForceNotify
+    init:               init,
+    contribute:         contribute,
+    claimForce:         claimForce,
+    hit:                hit,
+    getBallCall:        getBallCall,
+    refreshBallCall:    refreshBallCall,
+    registerPlayer:     registerPlayer,
+    mustHit:            mustHit,
+    getDisplay:         getDisplay,
+    getValue:           getValue,
+    isConnected:        isConnected,
+    isForceArmed:       isForceArmed,
+    getPresenceCount:   getPresenceCount,
+    getSessionKey:      getSessionKey,
+    getPlayerNum:       getPlayerNum,
+    getPlayerLabel:     getPlayerLabel,
+    isUsingServerBalls: isUsingServerBalls,
+    onChange:           onChange,
+    onPresenceChange:   onPresenceChange,
+    onMessage:          onMessage,
+    onForceWin:         onForceWin,
+    onForceNotify:      onForceNotify,
+    onBallCallUpdate:   onBallCallUpdate
   };
 }());

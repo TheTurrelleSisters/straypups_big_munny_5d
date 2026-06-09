@@ -102,8 +102,6 @@ var BINGO_PATTERNS = [
   {name:'Arrowhead',        balls:30, pay:[80,160,240],    reel:'3bw2',
    cells:[2,6,7,8,10,12,14,17,22]},
 
-  {name:'Hot Dog',          balls:39, pay:[40,80,120],     reel:'1bw4',
-   cells:[6,7,8,10,11,12,13,14,16,17,18]},
 
   {name:'G Flat',           balls:36, pay:[40,80,120],     reel:'3b',
    cells:[2,3,4,7,12,15,16,17,20,21,22]},
@@ -150,11 +148,11 @@ var BINGO_PATTERNS = [
    cells:[2,10,12,14,22]},
 
   // ── PROGRESSIVE JACKPOT ─────────────────────────────────────────────────
-  // Class II compliant: bingo-determined. Hot Dog cells completed in ≤21 balls.
-  // Awards base Hot Dog pay PLUS the shared progressive pot.
-  // Both this pattern AND the standard Hot Dog can fire on same spin (they stack).
+  // Class II compliant: bingo-determined. Cover All (all 25 cells) in ≤25 balls.
+  // Awards progressive pot PLUS sum of ALL other pattern payouts stacked.
+  // Reel shows new StrayPup Progressive symbol (coverall).
   // Do NOT change balls threshold without owner approval.
-  {name:'Progressive Jackpot', balls:21, pay:[40,80,120], reel:'1bw4',
-   cells:[6,7,8,10,11,12,13,14,16,17,18], isProgressive:true}
+  {name:'Progressive Jackpot', balls:25, pay:[40,80,120], reel:'coverall',
+   cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], isProgressive:true}
 
 ];

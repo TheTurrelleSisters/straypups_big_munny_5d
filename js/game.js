@@ -2,6 +2,10 @@
 (function(){
 'use strict';
 
+/* DENOM — $5 version */
+var DENOM = 5.00;
+
+
 var IMG_SCOTT=document.getElementById('img-scott');
 var IMG_SPLASH=document.getElementById('img-splash');
 var IMG_BANNER=document.getElementById('img-banner');
@@ -181,14 +185,15 @@ var REEL_SYMS={
   'ch1':[5,4,3],'7w2':[0,1,1],'3bw2':[0,2,2],'2bw2':[0,3,3],
   '1bw2':[0,4,4],'spmb':[0,2,3],'spch':[0,5,4],'7w4':[0,0,1],
   '3bw4':[0,0,2],'2bw4':[0,0,3],'1bw4':[0,0,4],'spspch':[0,0,5],
-  'spchch':[0,5,5],'none':[4,2,3]
+  'spchch':[0,5,5],'none':[4,2,3],
+  'coverall':[7,7,7]
 };
 
 /* â”€â”€ BINGO CARD STATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 var BG={
   card:[],cardSerial:'',callSeq:[],cardNumSet:{},matchedCells:{},
   winPatterns:[],ballPos:0,entTimer:null,patternCycle:null,cycleIdx:0,
-  _coverAll1to40:false
+  _coverAll1to40:false,usingServerBalls:false
 };
 var COL_RANGES=[[1,15],[16,30],[31,45],[46,60],[61,75]];
 
@@ -258,10 +263,45 @@ function genGameSerial(){
   return 'GAME-'+t.toUpperCase()+r;
 }
 
+/* genBallCall — local CSPRNG fallback (used offline or as initial state) */
 function genBallCall(){
   var balls=[];
   for(var i=1;i<=75;i++) balls.push(i);
   return rng.shuffle(balls);
+}
+
+/* fetchServerBallCall — get sequence from DB with local fallback
+   cb(sequence) always fires — never stalls the game.
+   Online:  fetches server sequence, stores in BG.callSeq, sets BG.usingServerBalls=true
+   Offline: generates locally, sets BG.usingServerBalls=false
+*/
+function fetchServerBallCall(cb) {
+  if (typeof Progressive === 'undefined' || !Progressive.isConnected()) {
+    BG.callSeq = genBallCall();
+    BG.usingServerBalls = false;
+    if (cb) cb(BG.callSeq);
+    return;
+  }
+  Progressive.getBallCall(function(seq, isServer) {
+    BG.callSeq = seq;
+    BG.usingServerBalls = isServer;
+    if (cb) cb(BG.callSeq);
+  });
+}
+
+/* refreshServerBallCall — called when ball 75 exhausted */
+function refreshServerBallCall(cb) {
+  if (typeof Progressive === 'undefined' || !Progressive.isConnected()) {
+    BG.callSeq = genBallCall();
+    BG.usingServerBalls = false;
+    if (cb) cb(BG.callSeq);
+    return;
+  }
+  Progressive.refreshBallCall(function(seq, isServer) {
+    BG.callSeq = seq;
+    BG.usingServerBalls = isServer;
+    if (cb) cb(BG.callSeq);
+  });
 }
 
 /* â”€â”€ BINGO CARD RENDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -458,7 +498,7 @@ function startSilentCaller(){
   stopActiveCaller(); // silent and active are mutually exclusive
   _silentTimer=setInterval(function(){
     BG.ballPos=(BG.ballPos||0)+1;
-    if(BG.ballPos>=75){BG.callSeq=genBallCall();BG.ballPos=0;}
+    if(BG.ballPos>=75){ refreshServerBallCall(function(){ BG.ballPos=0; }); }
   },1300);
 }
 function stopSilentCaller(){
@@ -477,9 +517,11 @@ function stopActiveCaller(){
 function _activeCallNext(){
   BG.ballPos=(BG.ballPos||0)+1;
   if(BG.ballPos>=75){
-    // All 75 called — seamlessly continue with new sequence, no pause, no silent
-    BG.callSeq=genBallCall();
-    BG.ballPos=1; // start immediately on ball 1 of new sequence
+    // All 75 called — fetch new server sequence (or local fallback)
+    refreshServerBallCall(function() {
+      BG.ballPos=1;
+    });
+    return; // wait for callback before advancing
   }
   var newBall=BG.callSeq[BG.ballPos-1];
   // Daub card if ball matches
@@ -527,7 +569,9 @@ function doBingoSpin(){
   // Only regenerate sequence if we haven't started or all 75 were exhausted.
   var prevBallPos=BG.ballPos||0;
   if(!BG.callSeq||BG.callSeq.length!==75||prevBallPos===0){
-    BG.callSeq=genBallCall();
+    /* No sequence yet — use whatever is in BG.callSeq (set by fetchServerBallCall at init) */
+    /* If still empty, fall back to local */
+    if(!BG.callSeq||BG.callSeq.length!==75) BG.callSeq=genBallCall();
     prevBallPos=0;
   }
 
@@ -651,11 +695,17 @@ var SVG={
   5:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="#f8f4e8"/><defs><radialGradient id="cr" cx="38%" cy="30%" r="62%"><stop offset="0%" stop-color="#ff7090"/><stop offset="50%" stop-color="#dd0030"/><stop offset="100%" stop-color="#880010"/></radialGradient><linearGradient id="stm" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#5a9400"/><stop offset="100%" stop-color="#2a4a00"/></linearGradient><filter id="shc"><feDropShadow dx="2" dy="3" stdDeviation="2" flood-opacity="0.3"/></filter></defs><path d="M100 40 Q82 68 58 105" fill="none" stroke="url(#stm)" stroke-width="7" stroke-linecap="round"/><path d="M100 40 Q118 68 142 105" fill="none" stroke="url(#stm)" stroke-width="7" stroke-linecap="round"/><path d="M100 40 L100 8" fill="none" stroke="url(#stm)" stroke-width="6" stroke-linecap="round"/><ellipse cx="114" cy="16" rx="20" ry="10" fill="#4a7800" transform="rotate(-30 114 16)"/><circle cx="58" cy="138" r="42" fill="url(#cr)" filter="url(#shc)"/><circle cx="48" cy="122" r="12" fill="rgba(255,255,255,0.25)"/><circle cx="142" cy="138" r="42" fill="url(#cr)" filter="url(#shc)"/><circle cx="132" cy="122" r="12" fill="rgba(255,255,255,0.25)"/></svg>',
   6:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="#f8f4e8"/></svg>'
 };
+var IMG_PROG_JP=(function(){
+  var i=new Image();i.src='assets/symbols/stray_pup_progressive.svg';
+  i.style.cssText='width:95%;height:95%;object-fit:contain;display:block;';
+  return i;
+}());
 function mkSym(id){
   var w=document.createElement('div');
   w.style.cssText='width:100%;height:100%;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;';
   if(id===6){return w;} // blank = pure dark tape, no content
   if(id===0){var img=IMG_SCOTT.cloneNode();img.style.cssText='width:95%;height:95%;object-fit:contain;display:block;';w.appendChild(img);}
+  else if(id===7){var imgP=IMG_PROG_JP.cloneNode();imgP.style.cssText='width:95%;height:95%;object-fit:contain;display:block;';w.appendChild(imgP);}
   else if(SVG[id]) w.innerHTML=SVG[id];
   else w.innerHTML=SVG[6];
   return w;
@@ -666,15 +716,15 @@ function mkSym(id){
 function _loadPlayerState(){
   var bal=100,cpl=1;
   try{
-    var rawBal=localStorage.getItem('spbm_bal');
-    var rawCpl=localStorage.getItem('spbm_cpl');
+    var rawBal=localStorage.getItem('spbm5_bal');
+    var rawCpl=localStorage.getItem('spbm5_cpl');
     if(rawBal!==null){var b=parseFloat(rawBal);if(!isNaN(b)&&b>=0) bal=b;}
     if(rawCpl!==null){var cc=parseInt(rawCpl,10);if(cc===1||cc===2||cc===3) cpl=cc;}
   }catch(e){}
   return{bal:bal,cpl:cpl};
 }
 function _savePlayerState(){
-  try{localStorage.setItem('spbm_bal',S.bal.toFixed(2));localStorage.setItem('spbm_cpl',String(S.cpl));}catch(e){}
+  try{localStorage.setItem('spbm5_bal',S.bal.toFixed(2));localStorage.setItem('spbm5_cpl',String(S.cpl));}catch(e){}
 }
 var _ps=_loadPlayerState();
 var S={bal:_ps.bal,cpl:_ps.cpl,spinning:false,lastWin:0};
@@ -685,18 +735,13 @@ var CURRENT_SYMS=[5,4,1];
 var CURRENT_GHOSTS=[{above:6,sym:5,below:4},{above:6,sym:4,below:3},{above:3,sym:1,below:6}];
 var CPL=[1,2,3];
 
-function fmt(n){return '$'+n.toFixed(2);}
-function fmtMoney(n){
-  /* Format with thousands separator: $1,234.56 */
-  var parts=n.toFixed(2).split('.');
-  parts[0]=parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
-  return '$'+parts.join('.');
-}
+function fmt(n){return '$'+(n*DENOM).toFixed(2);} /* $5 denom — credits * DENOM */
+function fmtRaw(n){return '$'+n.toFixed(2);} /* raw dollar, no denom mult */
 function updUI(){
   document.getElementById('bval').textContent=fmt(S.bal);
   _savePlayerState();
   if(typeof checkDemoTrigger==='function') checkDemoTrigger();
-  document.getElementById('betval').textContent=fmt(S.cpl);
+  document.getElementById('betval').textContent=fmtRaw(S.cpl*DENOM);
   document.getElementById('cdisp').textContent=S.cpl;
 }
 function setCtrl(en){
@@ -919,7 +964,7 @@ function runRS(rsPatterns,cpl,onDone){
       (function(rIdx){spinReel(rIdx,sr.ghosts[rIdx],RS_STOP[rIdx],function(){rsDone++;});})(ri3);
     }
     setTimeout(function(){
-      var payAmt=pat.pay[cpl-1];
+      var payAmt=pat.pay[cpl-1]*DENOM;
       if(pat.reel==='jp'){
         frame2.classList.remove('bonus-active');
         redOv.classList.remove('on');badge.classList.remove('on');
@@ -945,14 +990,15 @@ function runRS(rsPatterns,cpl,onDone){
 function doSpin(){
   if(S.spinning) return;
   if(Date.now()-_spinDebounce<300) return;
-  if(S.bal<S.cpl){toast('INSERT CASH TO PLAY');return;}
+  if(S.bal<S.cpl*DENOM){toast('INSERT CASH TO PLAY');return;}
   if(_reelWinH===0) initReelSlots();
-  S.spinning=true;S.bal-=S.cpl;
+  S.spinning=true;S.bal-=S.cpl*DENOM;
   var _forceJP=false;
   if(typeof Progressive!=='undefined'){
-    _forceJP=Progressive.contribute(S.cpl);
+    _forceJP=Progressive.contribute(S.cpl*DENOM);
+    Progressive.registerPlayer(null);
   }
-  var _spinBalBefore=S.bal+S.cpl; var _spinCardSerial=BG.cardSerial;
+  var _spinBalBefore=S.bal+S.cpl*DENOM; var _spinCardSerial=BG.cardSerial;
   setWin(0,'');document.getElementById('bt-box').classList.remove('on');
   updUI();setCtrl(false);
   stopPatternCycle();
@@ -962,114 +1008,111 @@ function doSpin(){
 
   var winPatterns=doBingoSpin();
 
-  // ── FORCE JACKPOT CHECK ─────────────────────────────────────────────
-  // claimForce is ASYNC (DB round-trip to claim the armed command row).
-  // ALL spin logic — reel animation, pattern eval, payout — is wrapped in
-  // _continueSpinAfterClaim() so it always runs AFTER the claim resolves,
-  // ensuring winPatterns is correct before the reels start spinning.
-  // FIX v1.3: was fire-and-forget; reels animated before callback returned.
+  // ── FORCE JACKPOT + SPIN CONTINUATION ───────────────────────────────────
+  // ALL spin logic lives in _continueSpinAfterClaim().
+  // claimForce() is async — BOTH didWin=true AND didWin=false paths call it.
+  // FIXES: lockup, wrong toast, wrong amount, double-credit, pot not resetting.
   function _continueSpinAfterClaim(){
-    // Active caller: start on first spin, keep running on subsequent spins
     if(!BG.entTimer) startActiveCaller();
-  var spinData;
-  if(winPatterns.length===0){
-    // No bingo â€” realistic non-winning combo
-    var attempts=0;
-    do{spinData=genSpinResult();attempts++;}
-    while(evalSpin(buildGrid(spinData.syms,spinData.ghosts)).amt>0&&attempts<200);
-  } else {
-    // Sort ascending â€” LOWEST paying pattern is the base spin
-    winPatterns.sort(function(a,b){return a.pay[0]-b.pay[0];});
-    // If progressive jackpot fired, always show SP/SP/Single BAR on reels
-    var _progInWins=false;
-    for(var _rpi=0;_rpi<winPatterns.length;_rpi++){if(winPatterns[_rpi].isProgressive){_progInWins=true;break;}}
-    if(_progInWins){
-      spinData=forcedSpinResult(REEL_SYMS['1bw4']); // SP / SP / Single BAR
-    } else {
-      spinData=forcedSpinResult(REEL_SYMS[winPatterns[0].reel]||REEL_SYMS['none']);
-    }
-  }
-
-  animateReels(spinData,function(){
+    var spinData;
     if(winPatterns.length===0){
-      setWin(0,'NO BINGO');
-      opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:0,patterns:[],balBefore:_spinBalBefore,balAfter:S.bal});
-      _spinDebounce=Date.now();S.spinning=false;setCtrl(true);updUI();return;
+      var attempts=0;
+      do{spinData=genSpinResult();attempts++;}
+      while(evalSpin(buildGrid(spinData.syms,spinData.ghosts)).amt>0&&attempts<200);
+    } else {
+      winPatterns.sort(function(a,b){return a.pay[0]-b.pay[0];});
+      var _progInWins=false;
+      for(var _rpi=0;_rpi<winPatterns.length;_rpi++){if(winPatterns[_rpi].isProgressive){_progInWins=true;break;}}
+      spinData=_progInWins
+        ?forcedSpinResult(REEL_SYMS['coverall'])
+        :forcedSpinResult(REEL_SYMS[winPatterns[0].reel]||REEL_SYMS['none']);
     }
 
-    // Cover All in balls 1-40: penny award, reset sequence
-    if(BG._coverAll1to40){
-      BG._coverAll1to40=false;
-      _handleCoverAll(true); // penny award — _handleCoverAll checks S.spinning for silent vs active
-    }
+    animateReels(spinData,function(){
+      if(winPatterns.length===0){
+        setWin(0,'NO BINGO');
+        opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:0,patterns:[],balBefore:_spinBalBefore,balAfter:S.bal});
+        _spinDebounce=Date.now();S.spinning=false;setCtrl(true);updUI();return;
+      }
 
-    // winPatterns already sorted ascending â€” index 0 = lowest (base), rest = RS ascending
-    var basePat=winPatterns[0];
-    var rsPatterns=winPatterns.slice(1); // ascending order, no reverse needed
+      if(BG._coverAll1to40){BG._coverAll1to40=false;_handleCoverAll(true);}
 
-    var baseAmt=basePat.pay[S.cpl-1];
-    S.bal+=baseAmt;S.lastWin=baseAmt;flashCenter();
-    setWin(baseAmt,basePat.name.toUpperCase());
-    updUI();
-    if(baseAmt>=50) sndBigWin(); else sndSmallWin();
+      var _denom=(typeof DENOM!=='undefined'?DENOM:1);
+      var basePat=winPatterns[0];
+      var rsPatterns=winPatterns.slice(1);
 
-    // ── PROGRESSIVE JACKPOT CHECK (Class II — bingo determined) ──────────
-    var _progPat=null;
-    for(var _pi=0;_pi<winPatterns.length;_pi++){
-      if(winPatterns[_pi].isProgressive){_progPat=winPatterns[_pi];break;}
-    }
-    if(_progPat&&typeof Progressive!=='undefined'){
-      // FIX v1.3: pass callback so game waits for DB reset confirmation before
-      // proceeding. Progressive.hit() calls onDone(hitAmt) only after the
-      // progressive_hit RPC has confirmed — prevents stale meter and game lockup.
-      Progressive.hit({pattern:'Progressive Jackpot',balls:21,bet:S.cpl},function(_progAmt){
-        S.bal+=_progAmt;S.lastWin+=_progAmt;updUI();
-        showProgJP(_progAmt,basePat,rsPatterns,winPatterns,S.cpl,baseAmt,_spinCardSerial,_spinBalBefore);
-      });
-      return;
-    }
-    // ── END PROGRESSIVE CHECK ─────────────────────────────────────────────
+      // Detect progressive BEFORE crediting base pay — prevents double-credit + wrong toast
+      var _progPat=null;
+      for(var _pi=0;_pi<winPatterns.length;_pi++){
+        if(winPatterns[_pi].isProgressive){_progPat=winPatterns[_pi];break;}
+      }
 
-    // Pattern cycle starts AFTER reels are visible — no RS path
+      if(_progPat&&typeof Progressive!=='undefined'){
+        var _allPatsBonus=0;
+        for(var _api=0;_api<BINGO_PATTERNS.length;_api++){
+          if(!BINGO_PATTERNS[_api].isProgressive){
+            _allPatsBonus+=BINGO_PATTERNS[_api].pay[S.cpl-1]*_denom;
+          }
+        }
+        if(_progPat._forceAmt){
+          // Force win — amount confirmed by DB claim, no hit() RPC needed
+          var _totalForceAmt=_progPat._forceAmt+_allPatsBonus;
+          S.bal+=_totalForceAmt;S.lastWin=_totalForceAmt;updUI();
+          showProgJP(_totalForceAmt,basePat,rsPatterns,winPatterns,S.cpl,0,_spinCardSerial,_spinBalBefore);
+        } else {
+          // Natural bingo progressive — hit() resets pot in DB via callback
+          Progressive.hit({
+            pattern:'Progressive Jackpot',
+            patterns:winPatterns.map(function(p){return p.name;}),
+            balls:25,
+            bet:S.cpl*_denom
+          },function(_progAmt){
+            var _totalProgAmt=_progAmt+_allPatsBonus;
+            S.bal+=_totalProgAmt;S.lastWin=_totalProgAmt;updUI();
+            showProgJP(_totalProgAmt,basePat,rsPatterns,winPatterns,S.cpl,0,_spinCardSerial,_spinBalBefore);
+          });
+        }
+        return;
+      }
 
-    if(rsPatterns.length>0){
-      // Reels visible, RS about to fire — show base pattern briefly then RS takes over
-      startPatternCycle([basePat]); // show base pattern only until RS starts
-      setTimeout(function(){
-        stopPatternCycle(); // RS screen activates — clear pattern display
-        runRS(rsPatterns,S.cpl,function(bonusTotal){
-          setWin(baseAmt+bonusTotal,'BINGO WIN + RED SPIN!');
-          document.getElementById('bt-box').classList.remove('on');
-          // Now show ALL patterns after RS completes and final reel state visible
-          startPatternCycle(winPatterns);
-          // Active caller already running — no restart needed
-          opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt+bonusTotal,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
-          _spinDebounce=Date.now();updUI();S.spinning=false;setCtrl(true);
-        });
-      },600);return;
-    }
-    // No RS — reels are landed, now reveal all patterns
-    startPatternCycle(winPatterns);
-    opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
-    _spinDebounce=Date.now();S.spinning=false;setCtrl(true);updUI();
-  });
+      // ── Normal (non-progressive) win ──────────────────────────────────────
+      var baseAmt=basePat.pay[S.cpl-1]*_denom;
+      S.bal+=baseAmt;S.lastWin=baseAmt;flashCenter();
+      setWin(baseAmt,basePat.name.toUpperCase());
+      updUI();
+      if(baseAmt>=50) sndBigWin(); else sndSmallWin();
+
+      if(rsPatterns.length>0){
+        startPatternCycle([basePat]);
+        setTimeout(function(){
+          stopPatternCycle();
+          runRS(rsPatterns,S.cpl,function(bonusTotal){
+            setWin(baseAmt+bonusTotal,'BINGO WIN + RED SPIN!');
+            document.getElementById('bt-box').classList.remove('on');
+            startPatternCycle(winPatterns);
+            opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt+bonusTotal,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
+            _spinDebounce=Date.now();updUI();S.spinning=false;setCtrl(true);
+          });
+        },600);return;
+      }
+      startPatternCycle(winPatterns);
+      opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
+      _spinDebounce=Date.now();S.spinning=false;setCtrl(true);updUI();
+    });
   } // end _continueSpinAfterClaim
 
-  // Force jackpot armed: wait for async DB claim before animating reels.
-  // winPatterns must be finalized before _continueSpinAfterClaim() runs.
-  // Normal path: no force armed, proceed immediately.
-  if(_forceJP && typeof Progressive!=='undefined'){
-    Progressive.claimForce(function(didWin, forceAmt){
+  // Force jackpot: claim async, THEN run spin — both paths always call _continueSpinAfterClaim
+  if(_forceJP&&typeof Progressive!=='undefined'){
+    Progressive.claimForce(function(didWin,forceAmt){
       if(didWin){
         var _forcePat={
-          name:'Progressive Jackpot',balls:21,pay:[40,80,120],
-          reel:'1bw4',cells:[6,7,8,10,11,12,13,14,16,17,18],
+          name:'Progressive Jackpot',balls:25,pay:[40,80,120],
+          reel:'coverall',cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
           isProgressive:true,_forceAmt:forceAmt
         };
-        if(!winPatterns.length){winPatterns=[_forcePat];}
-        else{winPatterns.unshift(_forcePat);}
+        winPatterns=winPatterns.length?[_forcePat].concat(winPatterns):[_forcePat];
       }
-      _continueSpinAfterClaim();
+      _continueSpinAfterClaim(); // ALWAYS called — no lockup possible
     });
   } else {
     _continueSpinAfterClaim();
@@ -1100,7 +1143,7 @@ function renderHelp(){
 
 /* â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-/* ── PROGRESSIVE JACKPOT OVERLAY ── */
+/* ── PROGRESSIVE JACKPOT OVERLAY ─────────────────────────────────────── */
 /* ── PROGRESSIVE JACKPOT CELEBRATION (replaces old text overlay) ─────────
    Used for BOTH natural bingo wins AND force jackpot wins.
    Shows the video celebration overlay, NOT the old jp-ov text screen.
@@ -1116,7 +1159,7 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
   var amtEl = document.getElementById('fw-amt');
   var subEl = document.getElementById('fw-sub');
 
-  if (amtEl) amtEl.textContent = fmtMoney(progAmt);
+  if (amtEl) amtEl.textContent = '$' + progAmt.toFixed(2);
   if (subEl) subEl.textContent = 'PROGRESSIVE JACKPOT!';
   if (vid) {
     vid.src = CEL_VIDS[Math.floor(Math.random() * CEL_VIDS.length)];
@@ -1147,6 +1190,15 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
         });
       }, 600);
     } else {
+      /* Highlight ALL winning pattern cells on bingo card after dismiss */
+      var _allWinCells = {};
+      for (var _wci = 0; _wci < winPatterns.length; _wci++) {
+        for (var _wcc = 0; _wcc < winPatterns[_wci].cells.length; _wcc++) {
+          _allWinCells[winPatterns[_wci].cells[_wcc]] = true;
+        }
+      }
+      var _allCellArr = Object.keys(_allWinCells).map(Number);
+      renderBingoCard(BG.card, BG.matchedCells, _allCellArr);
       startPatternCycle(winPatterns);
       opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
         bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
@@ -1168,22 +1220,47 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
   }
 }
 
-function updateProgMeter(value){
-  var el=document.getElementById('prog-meter-val');
-  if(el) el.textContent=fmtMoney(value);
+function updateProgMeter(value) {
+  var el = document.getElementById('prog-meter-val');
+  if (el) el.textContent = '$' + value.toFixed(2);
 }
 
-function initProgressiveMeter(){
-  if(typeof Progressive==='undefined') return;
+function initProgressiveMeter() {
+  if (typeof Progressive === 'undefined') return;
   Progressive.onChange(updateProgMeter);
-  Progressive.init(function(){
+  Progressive.onBallCallUpdate(function(newSeq) {
+    if (BG.ballPos > 40 || BG.ballPos === 0) {
+      BG.callSeq = newSeq; BG.usingServerBalls = true; BG.ballPos = 0;
+    }
+  });
+  Progressive.init(function () {
     updateProgMeter(Progressive.getValue());
-    setTimeout(function(){ sizeLayout(); }, 50);
+    fetchServerBallCall(function() { BG.ballPos = 0; });
+    setTimeout(function () { sizeLayout(); }, 50);
+  });
+  Progressive.onForceWin(function(amt) {
+    var fv = document.getElementById('fw-video');
+    var fa = document.getElementById('fw-amt');
+    var fc = document.getElementById('force-win-cel');
+    if (fa) fa.textContent = '$' + amt.toFixed(2);
+    if (fv) {
+      var vids = ['assets/videos/josie_dance.mp4','assets/videos/sasha_dance.mp4','assets/videos/sasha_alt.mp4'];
+      fv.src = vids[Math.floor(Math.random() * vids.length)];
+      fv.load(); fv.play();
+    }
+    if (fc) fc.classList.add('show');
+  });
+  Progressive.onForceNotify(function(amt) {
+    var el  = document.getElementById('attitude-check');
+    var amtEl = document.getElementById('ac-jackpot-amt');
+    if (amtEl) amtEl.textContent = '$' + (amt || 0).toFixed(2);
+    if (el)  el.classList.add('show');
   });
 }
 
+
 /* -- INIT -- */
-BG.callSeq=genBallCall();
+BG.callSeq=genBallCall(); /* local default — overwritten by server on init */
 BG.ballPos=0;
 // State 1: idle — show pattern showcase, run silent caller
 GS.state='idle';
@@ -1199,8 +1276,9 @@ document.getElementById('bingo-col-hdrs').style.display='none';
 }());
 updUI();
 initProgressiveMeter();
+// sizeLayout called by initProgressiveMeter callback after meter renders
 startSilentCaller();
-setTimeout(sizeLayout,100); // game load — silent until first SPIN
+setTimeout(sizeLayout,100); // fallback layout pass // game load — silent until first SPIN
 startPatternShowcase();
 
 document.getElementById('spin-btn').addEventListener('click',doSpin);
