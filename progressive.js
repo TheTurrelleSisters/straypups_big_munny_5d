@@ -50,7 +50,20 @@ var Progressive = (function () {
   /* ── Player registry state ── */
   var _playerNum         = 0;     /* assigned after register_player RPC */
   var _playerLabel       = '';    /* "Player 3" — set after registration */
+  var _playerNickname    = '';    /* player-chosen nickname */
   var _playerRegistered  = false;
+
+  /* Ball pos update — debounced, max 1 write per 1.3s */
+  var _ballPosTimer      = null;
+  var _lastSentBallPos   = -1;
+
+  /* ── LOCAL PROGRESSIVE (offline fallback) ── */
+  var _localMode         = false;  /* true when offline, grows local pot */
+  var _localPotValue     = 500.00; /* mirrors last known wide area value */
+  var _localPotSeed      = 500.00; /* snapshot of seed when went offline */
+  var _localPotCeiling   = 9999.00;/* mirrors wide area ceiling */
+  var _connChangeListeners = [];   /* fired when online/offline state changes */
+  var _connMonitorTimer  = null;
 
   /* ── Ball call state ── */
   var _serverBallCall    = null;  /* array of 75 numbers from DB, or null */
@@ -110,8 +123,9 @@ var Progressive = (function () {
      NOTIFY HELPERS
      ═══════════════════════════════════════════════════════════════ */
   function _notifyValue() {
+    var val = _localMode ? _localPotValue : _localValue;
     for (var i = 0; i < _valueListeners.length; i++) {
-      try { _valueListeners[i](_localValue); } catch (e) {}
+      try { _valueListeners[i](val); } catch (e) {}
     }
   }
   function _notifyPresence() {
@@ -122,6 +136,11 @@ var Progressive = (function () {
   function _notifyBallCall(seq) {
     for (var i = 0; i < _ballCallListeners.length; i++) {
       try { _ballCallListeners[i](seq); } catch (e) {}
+    }
+  }
+  function _notifyConnChange(isOnline) {
+    for (var i = 0; i < _connChangeListeners.length; i++) {
+      try { _connChangeListeners[i](isOnline); } catch (e) {}
     }
   }
 
@@ -142,7 +161,7 @@ var Progressive = (function () {
       /* Offline — use local immediately */
       var local = _localBallShuffle();
       _usingServerBalls = false;
-      if (cb) cb(local, false);
+      if (cb) cb(local, false, 0);
       return;
     }
 
@@ -157,29 +176,30 @@ var Progressive = (function () {
       var local = _localBallShuffle();
       _usingServerBalls = false;
       _cbFired = true;
-      if (cb) cb(local, false);
+      if (cb) cb(local, false, 0);
     }, 3000);
 
-    _client.rpc('get_or_create_ball_call', { p_game_id: PROG_GAME_ID })
+    _client.rpc('get_ball_call_with_pos', { p_game_id: PROG_GAME_ID })
       .then(function (res) {
         clearTimeout(_timer);
-        if (res.error || !res.data || !Array.isArray(res.data)) {
+        if (res.error || !res.data || !res.data.sequence) {
           console.warn('[Progressive] getBallCall RPC error:', res.error && res.error.message);
           if (!_cbFired) {
             var local2 = _localBallShuffle();
             _usingServerBalls = false;
             _cbFired = true;
-            if (cb) cb(local2, false);
+            if (cb) cb(local2, false, 0);
           }
           return;
         }
-        _serverBallCall = res.data;
+        _serverBallCall = res.data.sequence;
+        var _serverBallPos = res.data.ball_pos || 0;
         _usingServerBalls = true;
         if (!_cbFired) {
           _cbFired = true;
-          if (cb) cb(_serverBallCall.slice(), true);
+          /* Pass sequence AND current ball position so joining player starts correctly */
+          if (cb) cb(_serverBallCall.slice(), true, _serverBallPos);
         } else {
-          /* Timeout already fired with local — notify listeners of server seq */
           _notifyBallCall(_serverBallCall.slice());
         }
       })
@@ -190,7 +210,7 @@ var Progressive = (function () {
           var local3 = _localBallShuffle();
           _usingServerBalls = false;
           _cbFired = true;
-          if (cb) cb(local3, false);
+          if (cb) cb(local3, false, 0);
         }
       });
   }
@@ -204,7 +224,7 @@ var Progressive = (function () {
     if (!_isOnline()) {
       var local = _localBallShuffle();
       _usingServerBalls = false;
-      if (cb) cb(local, false);
+      if (cb) cb(local, false, 0);
       return;
     }
 
@@ -214,7 +234,7 @@ var Progressive = (function () {
           console.warn('[Progressive] refreshBallCall error — using local');
           var local2 = _localBallShuffle();
           _usingServerBalls = false;
-          if (cb) cb(local2, false);
+          if (cb) cb(local2, false, 0);
           return;
         }
         _serverBallCall = res.data;
@@ -224,7 +244,7 @@ var Progressive = (function () {
       .catch(function () {
         var local3 = _localBallShuffle();
         _usingServerBalls = false;
-        if (cb) cb(local3, false);
+        if (cb) cb(local3, false, 0);
       });
   }
 
@@ -241,8 +261,16 @@ var Progressive = (function () {
    */
   var _localPlayerCounter = 1; /* shared local counter for offline sessions */
 
-  function registerPlayer(cb) {
+  function registerPlayer(cb, nickname) {
+    if (nickname) _playerNickname = nickname;
     if (_playerRegistered) {
+      /* Update nickname if changed */
+      if (nickname && _client && _connected) {
+        _client.rpc('register_player', {
+          p_session_key: _sessionKey, p_game_id: PROG_GAME_ID,
+          p_denom: PROG_DENOM, p_nickname: nickname
+        });
+      }
       if (cb) cb(_playerNum, _playerLabel);
       return;
     }
@@ -271,7 +299,8 @@ var Progressive = (function () {
     _client.rpc('register_player', {
       p_session_key: _sessionKey,
       p_game_id:     PROG_GAME_ID,
-      p_denom:       PROG_DENOM
+      p_denom:       PROG_DENOM,
+      p_nickname:    _playerNickname || null
     }).then(function (res) {
       clearTimeout(_timer);
       if (_cbFired) return;
@@ -397,6 +426,73 @@ var Progressive = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════
+     LOCAL PROGRESSIVE — OFFLINE FALLBACK
+     When offline: pot mirrors last known wide area value, grows locally.
+     Win pays from local pot, resets to last known seed. No DB writes.
+     On reconnect: switches back to wide area instantly.
+     ═══════════════════════════════════════════════════════════════ */
+
+  function _goLocalMode() {
+    if (_localMode) return;
+    _localMode       = true;
+    /* Snapshot current wide area values as local baseline */
+    _localPotValue   = _localValue;
+    _localPotSeed    = _seed;
+    _localPotCeiling = _ceiling;
+    console.warn('[Progressive] OFFLINE — switching to local progressive. Pot: $' + _localPotValue.toFixed(2));
+    _notifyConnChange(false);
+    _notifyValue(); /* re-notify with local value so meter updates */
+  }
+
+  function _goOnlineMode() {
+    if (!_localMode) return;
+    _localMode = false;
+    console.log('[Progressive] ONLINE — resuming wide area progressive.');
+    /* Re-fetch live value immediately */
+    if (_client) _fetchRow(function() {
+      _notifyValue();
+      _notifyConnChange(true);
+    });
+  }
+
+  function _startConnMonitor() {
+    if (_connMonitorTimer) return;
+    _connMonitorTimer = setInterval(function() {
+      var nowConnected = (_connected && _client !== null);
+      if (!nowConnected && !_localMode) {
+        _goLocalMode();
+      } else if (nowConnected && _localMode) {
+        _goOnlineMode();
+      }
+    }, 5000);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     BALL POSITION TRACKING
+     ═══════════════════════════════════════════════════════════════ */
+
+  /*
+   * updateBallPos(pos) — called by game every 1.3s via _activeCallNext.
+   * Debounced — only writes to DB if pos changed and 1.3s elapsed.
+   * Updates ball_call.ball_pos so joining players start at correct position.
+   */
+  function updateBallPos(pos) {
+    if (!_connected || !_client) return;
+    if (pos === _lastSentBallPos) return;
+    _lastSentBallPos = pos;
+    if (_ballPosTimer) return; /* debounce */
+    _ballPosTimer = setTimeout(function() {
+      _ballPosTimer = null;
+      _client.rpc('update_ball_pos', {
+        p_game_id: PROG_GAME_ID,
+        p_pos:     _lastSentBallPos
+      }).then(function(res) {
+        if (res.error) console.warn('[Progressive] updateBallPos error:', res.error.message);
+      });
+    }, 300); /* 300ms debounce — safely under 1.3s interval */
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
      PRESENCE
      ═══════════════════════════════════════════════════════════════ */
   function _subscribePresence() {
@@ -423,6 +519,7 @@ var Progressive = (function () {
             denom:       PROG_DENOM,
             joinedAt:    new Date().toISOString(),
             playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
+            nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6))
             sessionKey:  _sessionKey
           });
         }
@@ -515,6 +612,8 @@ var Progressive = (function () {
       if (!window.supabase) {
         /* SDK failed to load — full offline mode */
         console.warn('[Progressive] Full offline mode — no DB connection');
+        _goLocalMode();
+        _startConnMonitor();
         if (onReady) onReady();
         return;
       }
@@ -531,11 +630,13 @@ var Progressive = (function () {
           _subscribeMessages();
           _checkUnreadMessages();
           setInterval(function () { _fetchRow(null); }, 60000);
+          _startConnMonitor();
           if (onReady) onReady();
         });
       } catch (e) {
         console.warn('[Progressive] init failed:', e);
         _connected = false;
+        _goLocalMode();
         if (onReady) onReady();
       }
     });
@@ -544,7 +645,13 @@ var Progressive = (function () {
   function contribute(betAmt) {
     if (!betAmt || betAmt <= 0) return false;
     var addition = betAmt * _contribRate;
-    _localValue  = Math.min(_localValue + addition, _ceiling);
+    if (_localMode) {
+      /* Offline — grow local pot only, no DB write */
+      _localPotValue = Math.min(_localPotValue + addition, _localPotCeiling);
+      _notifyValue(); /* meter shows local value */
+      return false;   /* never armed when offline */
+    }
+    _localValue = Math.min(_localValue + addition, _ceiling);
     _notifyValue();
     if (_connected && _client) {
       _pendingAdd += addition;
@@ -556,6 +663,15 @@ var Progressive = (function () {
   function claimForce(onResult) { _claimForceWin(onResult); }
 
   function hit(info, onDone) {
+    if (_localMode) {
+      /* Offline local win — pay local pot, reset to local seed, no DB write */
+      var hitAmt = parseFloat(_localPotValue.toFixed(2));
+      _localPotValue = _localPotSeed;
+      _notifyValue();
+      console.log('[Progressive] LOCAL WIN: $' + hitAmt.toFixed(2) + ' — wide area pot unaffected');
+      if (onDone) onDone(hitAmt);
+      return hitAmt;
+    }
     var hitAmt  = parseFloat(_localValue.toFixed(2));
     _localValue = _seed;
     _notifyValue();
@@ -646,9 +762,10 @@ var Progressive = (function () {
   }
 
   /* ── Accessors ── */
-  function mustHit()            { return _localValue >= _ceiling; }
-  function getDisplay()         { return '$' + _localValue.toFixed(2); }
-  function getValue()           { return _localValue; }
+  function mustHit()            { return _localMode ? (_localPotValue >= _localPotCeiling) : (_localValue >= _ceiling); }
+  function getDisplay()         { var v = _localMode ? _localPotValue : _localValue; return '$' + v.toFixed(2); }
+  function getValue()           { return _localMode ? _localPotValue : _localValue; }
+  function isLocalMode()        { return _localMode; }
   function isConnected()        { return _connected; }
   function getPresenceCount()   { return _presenceCount; }
   function isForceArmed()       { return _forceArmed; }
@@ -679,6 +796,9 @@ var Progressive = (function () {
     isForceArmed:       isForceArmed,
     getPresenceCount:   getPresenceCount,
     getSessionKey:      getSessionKey,
+    getPlayerNickname:  function() { return _playerNickname; },
+    isLocalMode:        isLocalMode,
+    updateBallPos:      updateBallPos,
     getPlayerNum:       getPlayerNum,
     getPlayerLabel:     getPlayerLabel,
     isUsingServerBalls: isUsingServerBalls,
@@ -687,6 +807,7 @@ var Progressive = (function () {
     onMessage:          onMessage,
     onForceWin:         onForceWin,
     onForceNotify:      onForceNotify,
-    onBallCallUpdate:   onBallCallUpdate
+    onBallCallUpdate:   onBallCallUpdate,
+    onConnChange:       function(fn) { _connChangeListeners.push(fn); }
   };
 }());

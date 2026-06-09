@@ -51,7 +51,7 @@
       </div>
       <!-- Ball strip BELOW card -->
       <div id="ball-strip-area">
-        <div id="ball-call-badge" style="font-size:10px;font-weight:bold;letter-spacing:1px;padding:2px 6px;border-radius:4px;margin-bottom:3px;color:#ffaa00;">&#9679; LOCAL</div>
+        <div id="ball-call-badge" style="font-size:10px;font-weight:bold;letter-spacing:1px;padding:2px 6px;border-radius:4px;margin-bottom:3px;color:#ffaa00;"></div>
   <div id="ball-strip-grid"></div>
       </div>
     </div>
@@ -71,6 +71,11 @@
     </div>
   </div>
 
+  <!-- PROGRESSIVE OFFLINE BANNER -->
+  <div id="prog-offline-banner">
+    <div class="pob-text">&#9888; Progressive Jackpot Unavailable &mdash; Reconnecting&hellip;</div>
+    <div class="pob-sub">Local jackpot active &bull; Wide area play resumes on reconnect</div>
+  </div>
   <div id="prog-meter">
     <div id="prog-meter-lbl">&#9733; PROGRESSIVE JACKPOT &#9733;</div>
     <div id="prog-meter-val">$500.00</div>
@@ -140,16 +145,7 @@
 <script src="js/game.js?v=5.30"></script>
 <script src="js/operator.js?v=5.30"></script>
 <script src="broadcast-init.js?v=5.30"></script>
-<!-- LOBBY PROMO BANNER -->
-<div id="lobby-promo">
-  <div id="lp-icon">&#127922;</div>
-  <div id="lp-text">
-    <div id="lp-title">&#9733; Gold Coins Casino</div>
-    <div id="lp-sub">Play all 3 games &bull; Shared Progressive Jackpot</div>
-  </div>
-  <a id="lp-btn" href="https://theturrellesisters.github.io/turrelle_gold_coins_casino/" target="_blank">VISIT</a>
-  <div id="lp-close" onclick="dismissPromo()">&#10005;</div>
-</div>
+<!-- lobby-promo removed: age gate now in Gold Coins Casino lobby -->
 <script>
 (function(){
   var PROMO_KEY = 'lp_dismissed';

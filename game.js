@@ -302,19 +302,53 @@ function fetchServerBallCall(cb) {
   });
 }
 
-/* refreshServerBallCall — called when ball 75 exhausted */
+/* refreshServerBallCall — called when ball 75 exhausted or Cover All fires.
+   Online:  calls upsert_ball_call → new sequence → all clients get it via realtime.
+   Offline: keeps existing sequence if loaded, generates local only if nothing in memory.
+            Schedules background resync every 10s until connection returns.
+*/
 function refreshServerBallCall(cb) {
   if (typeof Progressive === 'undefined' || !Progressive.isConnected()) {
-    BG.callSeq = genBallCall();
+    /* Offline — keep current sequence if we have one, otherwise generate locally */
+    if (!BG.callSeq || BG.callSeq.length !== 75) {
+      BG.callSeq = genBallCall();
+    }
     BG.usingServerBalls = false;
+    updateBallCallBadge();
     if (cb) cb(BG.callSeq);
+    /* Schedule background resync attempt every 10s */
+    _scheduleResync();
     return;
   }
   Progressive.refreshBallCall(function(seq, isServer) {
     BG.callSeq = seq;
     BG.usingServerBalls = isServer;
+    updateBallCallBadge();
     if (cb) cb(BG.callSeq);
   });
+}
+
+/* _scheduleResync — quietly attempts to get back on the server sequence 
+   after a connection loss. Cancels itself once back online. */
+var _resyncTimer = null;
+function _scheduleResync() {
+  if (_resyncTimer) return; /* already scheduled */
+  _resyncTimer = setInterval(function() {
+    if (typeof Progressive === 'undefined' || !Progressive.isConnected()) return;
+    /* Back online — fetch current server sequence and adopt it */
+    Progressive.getBallCall(function(seq, isServer) {
+      if (!isServer) return;
+      clearInterval(_resyncTimer); _resyncTimer = null;
+      /* Only adopt if we're between rounds (not mid-entertainment phase) */
+      if (BG.ballPos >= 40) {
+        BG.callSeq = seq;
+        BG.usingServerBalls = true;
+        updateBallCallBadge();
+        /* Repopulate strip with server balls */
+        if (BG.card) renderBallStrip(BG.callSeq, Math.min(BG.ballPos, 40), BG.cardNumSet);
+      }
+    });
+  }, 10000);
 }
 
 /* â”€â”€ BINGO CARD RENDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -373,15 +407,23 @@ function buildBallStrip(){
   }
 }
 function renderBallStrip(callSeq,calledCount,cardNumSet){
+  /* Ball strip display rules:
+     - Balls 1-40 (pre-called): appear ALL AT ONCE instantly when spin resolves.
+       Yellow = called, not on card. Pink = called AND on card.
+     - Balls 41-75 (entertainment): fill in ONE AT A TIME every 1.3s via _activeCallNext.
+       White = called in entertainment phase.
+     - Uncalled cells (i >= calledCount): always empty — no number shown until called.
+     - Before first spin: strip is fully empty.
+  */
   if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
   for(var i=0;i<75;i++){
     var node=_ballNodes[i];
     if(i<calledCount){
       var ball=callSeq[i];var isPre=(i<40);var isMatch=(cardNumSet[ball]!==undefined);
       node.textContent=ball;
-      if(isPre&&isMatch) node.className='ball match';
+      if(isPre&&isMatch)       node.className='ball match';
       else if(isPre&&!isMatch) node.className='ball pre';
-      else node.className='ball called';
+      else                     node.className='ball called';
     } else {
       node.className='ball empty';node.textContent='';
     }
@@ -531,8 +573,20 @@ function _activeCallNext(){
   BG.ballPos=(BG.ballPos||0)+1;
   if(BG.ballPos>=75){
     // All 75 called — fetch new server sequence (or local fallback)
-    refreshServerBallCall(function() {
-      BG.ballPos=1;
+    // New 40 balls populate strip instantly, no blank state
+    refreshServerBallCall(function(newSeq) {
+      BG.ballPos=40; // jump straight to ball 40 — all pre-called balls shown
+      if(BG.card){
+        // Re-evaluate which of the new 40 balls match the current card
+        BG.matchedCells={12:true};
+        for(var _nb=0;_nb<40;_nb++){
+          var _ball=BG.callSeq[_nb];
+          if(BG.cardNumSet[_ball]!==undefined) BG.matchedCells[BG.cardNumSet[_ball]]=true;
+        }
+        renderBingoCard(BG.card,BG.matchedCells,null);
+        renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+      }
+      updateBallCallBadge();
     });
     return; // wait for callback before advancing
   }
@@ -1078,7 +1132,7 @@ function doSpin(){
   if(typeof Progressive!=='undefined'){
     _forceJP=Progressive.contribute(S.cpl*DENOM);
     /* Register player on first spin — safe to call multiple times */
-    Progressive.registerPlayer(null);
+    Progressive.registerPlayer(null, window._playerNickname || null);
   }
   var _spinBalBefore=S.bal+S.cpl*DENOM; var _spinCardSerial=BG.cardSerial;
   setWin(0,'');document.getElementById('bt-box').classList.remove('on');
@@ -1356,21 +1410,57 @@ function initProgressiveMeter(){
     toast('\u2605 JACKPOT HIT on '+label+'! $'+amt.toFixed(2));
   });
   Progressive.onBallCallUpdate(function(newSeq){
-    if(BG.ballPos>40||BG.ballPos===0){BG.callSeq=newSeq;BG.usingServerBalls=true;BG.ballPos=0;}
+    if(BG.ballPos>40||BG.ballPos===0){
+      BG.callSeq=newSeq;BG.usingServerBalls=true;BG.ballPos=0;
+      clearBallStrip();
+      updateBallCallBadge();
+    }
+  });
+  Progressive.onConnChange(function(isOnline){
+    var banner=document.getElementById('prog-offline-banner');
+    var lbl=document.getElementById('prog-meter-lbl');
+    var val=document.getElementById('prog-meter-val');
+    if(banner) banner.classList.toggle('show',!isOnline);
+    if(lbl)    lbl.classList.toggle('local-mode',!isOnline);
+    if(val)    val.classList.toggle('local-mode',!isOnline);
+    updateBallCallBadge();
+    if(typeof Progressive!=='undefined') updateProgMeter(Progressive.getValue());
   });
   Progressive.init(function(){
     updateProgMeter(Progressive.getValue());
-    fetchServerBallCall(function(){BG.ballPos=0;});
+    fetchServerBallCall(function(){
+      BG.ballPos=0;
+      if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
+      updateBallCallBadge();
+    });
     setTimeout(function(){ sizeLayout(); }, 50);
   });
 }
 
 /* -- INIT -- */
+/* Read player nickname from URL param (passed by Gold Coins Casino lobby) */
+(function(){
+  try {
+    var _urlParams = new URLSearchParams(window.location.search);
+    var _urlNick = _urlParams.get('player');
+    if (_urlNick && _urlNick.trim().length >= 2) {
+      window._playerNickname = _urlNick.trim().substring(0, 16);
+    }
+  } catch(e) {}
+}());
 BG.callSeq=genBallCall(); /* local default — overwritten by server on init */
 BG.ballPos=0;
 // State 1: idle — show pattern showcase, run silent caller
 GS.state='idle';
 buildBallStrip(); // pre-build ball nodes (empty)
+buildBingoCardNodes(); // pre-build card grid (empty cells visible before first spin)
+/* Render empty grid immediately so structure is always visible */
+if(_ballNodes&&_ballNodes.length===75){
+  for(var _ei=0;_ei<75;_ei++){
+    _ballNodes[_ei].className='ball empty';
+    _ballNodes[_ei].textContent='';
+  }
+}
 document.getElementById('bingo-col-hdrs').style.display='none';
 (function(){
   var initGhosts=[
