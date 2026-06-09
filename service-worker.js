@@ -1,99 +1,41 @@
-/*
- * service-worker.js — StrayPups Big Munny $5
- * Gold Coins Casino System v2.4
- * AUTO-UPDATE: Detects new version, clears old cache, reloads all clients silently.
- * Bump CACHE_VER on every release — everything else is automatic.
- */
-var CACHE_VER = 'spbm5-v2.8';
-
-/* Files to pre-cache on install */
-var CACHE_URLS = ['./index.html','./css/styles.css','./js/progressive.js','./js/config.js','./js/game.js','./js/operator.js','./assets/scott_full.png','./assets/banner.jpg','./assets/splash.jpg','./assets/credits_addup.wav','./assets/red_spin_music.mp3','./assets/ring1.mp3','./assets/splash_welcome.wav'];
-
-/* ── INSTALL: cache files + skip waiting immediately ── */
-self.addEventListener('install', function(e) {
+var CACHE = 'spbm-v529';
+var FILES = [
+  './',
+  './index.html',
+  './css/styles.css',
+  './js/config.js',
+  './js/game.js',
+  './js/operator.js',
+  './js/progressive.js',
+  './progressive.js',
+  './assets/splash.jpg',
+  './assets/banner.jpg',
+  './assets/symbols/stray_pup_progressive.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './assets/credits_addup.wav',
+  './assets/red_spin_music.mp3',
+  './assets/ring1.mp3',
+  './assets/splash_welcome.wav'
+];
+self.addEventListener('install', function(e){
   e.waitUntil(
-    caches.open(CACHE_VER)
-      .then(function(cache) {
-        return cache.addAll(CACHE_URLS).catch(function(err) {
-          console.warn('[SW] Pre-cache failed (non-fatal):', err);
-        });
-      })
-      .then(function() {
-        /* Skip waiting — activate immediately without waiting for old SW to die */
-        return self.skipWaiting();
-      })
+    caches.open(CACHE).then(function(c){ return c.addAll(FILES); })
   );
+  self.skipWaiting();
 });
-
-/* ── ACTIVATE: nuke ALL old caches, claim all clients, force reload ── */
-self.addEventListener('activate', function(e) {
+self.addEventListener('activate', function(e){
   e.waitUntil(
-    caches.keys()
-      .then(function(keys) {
-        return Promise.all(
-          keys.map(function(key) {
-            if (key !== CACHE_VER) {
-              console.log('[SW] Deleting stale cache:', key);
-              return caches.delete(key);
-            }
-          })
-        );
-      })
-      .then(function() {
-        /* Claim all open tabs immediately */
-        return self.clients.claim();
-      })
-      .then(function() {
-        /* Tell all open clients to reload so they get fresh files */
-        return self.clients.matchAll({ type: 'window' }).then(function(clients) {
-          clients.forEach(function(client) {
-            if (client.url && 'navigate' in client) {
-              client.navigate(client.url);
-            }
-          });
-        });
-      })
+    caches.keys().then(function(keys){
+      return Promise.all(keys.filter(function(k){ return k!==CACHE; }).map(function(k){ return caches.delete(k); }));
+    })
   );
+  self.clients.claim();
 });
-
-/* ── FETCH: network-first for JS/HTML, cache-first for assets ── */
-self.addEventListener('fetch', function(e) {
-  var url = e.request.url;
-
-  /* Always go to network for JS, HTML, and API calls */
-  if (url.indexOf('.js') !== -1 ||
-      url.indexOf('.html') !== -1 ||
-      url.indexOf('supabase.co') !== -1 ||
-      url.indexOf('jsdelivr.net') !== -1 ||
-      url.indexOf('cdn.') !== -1) {
-    e.respondWith(
-      fetch(e.request)
-        .then(function(resp) {
-          /* Update cache with fresh copy */
-          var clone = resp.clone();
-          caches.open(CACHE_VER).then(function(cache) {
-            cache.put(e.request, clone);
-          });
-          return resp;
-        })
-        .catch(function() {
-          /* Network failed — serve from cache as fallback */
-          return caches.match(e.request);
-        })
-    );
-    return;
-  }
-
-  /* Cache-first for images, audio, video */
+self.addEventListener('fetch', function(e){
   e.respondWith(
-    caches.match(e.request).then(function(cached) {
-      return cached || fetch(e.request).then(function(resp) {
-        var clone = resp.clone();
-        caches.open(CACHE_VER).then(function(cache) {
-          cache.put(e.request, clone);
-        });
-        return resp;
-      });
+    caches.match(e.request).then(function(r){
+      return r || fetch(e.request).catch(function(){ return caches.match('./index.html'); });
     })
   );
 });
