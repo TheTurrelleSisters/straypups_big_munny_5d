@@ -276,7 +276,7 @@ function updateBallCallBadge(){
   var el=document.getElementById('ball-call-badge');
   if(!el) return;
   if(BG.usingServerBalls){
-    el.textContent='\u25cf LIVE BALLS';
+    el.textContent='\u25cf WABC';
     el.style.color='#00ff88';
   } else {
     el.textContent='\u25cf LOCAL';
@@ -550,12 +550,15 @@ function _showNextPattern(){
 /* -- SILENT CALLER (game load + Cover All idle only) -- */
 var _silentTimer=null;
 function startSilentCaller(){
+  /* Silent caller: player is idle — keep sequence current but do NOT advance ballPos.
+     ballPos is only advanced by _activeCallNext during active gameplay.
+     Between spins the sequence stays frozen at current position. */
   stopSilentCaller();
   stopActiveCaller(); // silent and active are mutually exclusive
-  _silentTimer=setInterval(function(){
-    BG.ballPos=(BG.ballPos||0)+1;
-    if(BG.ballPos>=75){ refreshServerBallCall(function(){ BG.ballPos=0; }); }
-  },1300);
+  /* No-op timer — sequence stays live via realtime subscription */
+  _silentTimer = setInterval(function(){
+    /* Intentionally empty — ballPos not advanced when idle */
+  }, 30000);
 }
 function stopSilentCaller(){
   if(_silentTimer){clearInterval(_silentTimer);_silentTimer=null;}
