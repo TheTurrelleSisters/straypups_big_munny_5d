@@ -614,19 +614,28 @@ function _handleCoverAll(hasPenny){
   nameEl.textContent=hasPenny?'GAME END — COVER ALL $0.01':'GAME END — COVER ALL';
   nameEl.style.color='#ffcc00';
   if(hasPenny){S.bal+=0.01;updUI();}
-  // Reset ball sequence
-  BG.callSeq=genBallCall();
-  BG.ballPos=0;
-  setTimeout(function(){
-    nameEl.textContent=' ';nameEl.style.color='';
-    if(BG.card) renderBallStrip(BG.callSeq,0,BG.cardNumSet);
-  },2500);
-  // Switch to silent only if player is idle (not spinning)
-  if(!S.spinning){
-    stopActiveCaller();
-    startSilentCaller();
-  }
-  // If spinning: active caller keeps running with new sequence — no interruption
+  /* BUG2 FIX: refreshServerBallCall writes new sequence to DB,
+     resets ball_pos=0, notifies ALL connected players via realtime.
+     Cover All ends the round for EVERYONE immediately. */
+  if(!S.spinning){ stopActiveCaller(); }
+  refreshServerBallCall(function(){
+    BG.ballPos=0;
+    updateBallCallBadge();
+    setTimeout(function(){
+      nameEl.textContent=' ';nameEl.style.color='';
+      if(BG.card){
+        BG.matchedCells={12:true};
+        for(var _cb=0;_cb<40;_cb++){
+          var _cball=BG.callSeq[_cb];
+          if(BG.cardNumSet[_cball]!==undefined)
+            BG.matchedCells[BG.cardNumSet[_cball]]=true;
+        }
+        renderBingoCard(BG.card,BG.matchedCells,null);
+        renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+      }
+      if(!S.spinning){ startSilentCaller(); }
+    },2500);
+  });
 }
 
 /* Legacy aliases so existing call sites don't break */
@@ -708,10 +717,13 @@ function doBingoSpin(){
   // Preserve how many balls have been revealed so far.
   // Only regenerate sequence if we haven't started or all 75 were exhausted.
   var prevBallPos=BG.ballPos||0;
-  if(!BG.callSeq||BG.callSeq.length!==75||prevBallPos===0){
-    /* No sequence yet — use whatever is in BG.callSeq (set by fetchServerBallCall at init) */
-    /* If still empty, fall back to local */
-    if(!BG.callSeq||BG.callSeq.length!==75) BG.callSeq=genBallCall();
+  /* BUG1 FIX: Never reset sequence on spin — sequence continues across spins.
+     Only reset if no sequence loaded at all (first load or corrupt state).
+     prevBallPos===0 alone is NOT a reason to regenerate — it just means
+     the entertainment phase hasn't started yet on this sequence. */
+  if(!BG.callSeq||BG.callSeq.length!==75){
+    /* No sequence at all — fall back to local */
+    BG.callSeq=genBallCall();
     prevBallPos=0;
   }
 
@@ -1387,9 +1399,25 @@ function initProgressiveMeter(){
   _setSplashConnStatus('Connecting to wide area…', '#ffaa00');
   Progressive.onChange(updateProgMeter);
   Progressive.onBallCallUpdate(function(newSeq) {
-    if (BG.ballPos > 40 || BG.ballPos === 0) {
-      BG.callSeq = newSeq; BG.usingServerBalls = true; BG.ballPos = 0;
-      clearBallStrip(); updateBallCallBadge();
+    /* BUG3 FIX: Always adopt new sequence regardless of where player is.
+       Cover All fired on another client — everyone resets immediately.
+       Re-dub current card against new sequence so display stays correct. */
+    BG.callSeq = newSeq;
+    BG.usingServerBalls = true;
+    BG.ballPos = 0;
+    updateBallCallBadge();
+    /* If player has a card active, re-dub it against new sequence */
+    if (BG.card && Object.keys(BG.cardNumSet).length > 0) {
+      BG.matchedCells = {12: true};
+      for (var _rb = 0; _rb < 40; _rb++) {
+        var _rball = BG.callSeq[_rb];
+        if (BG.cardNumSet[_rball] !== undefined)
+          BG.matchedCells[BG.cardNumSet[_rball]] = true;
+      }
+      renderBingoCard(BG.card, BG.matchedCells, null);
+      renderBallStrip(BG.callSeq, 40, BG.cardNumSet);
+    } else {
+      clearBallStrip();
     }
   });
   Progressive.onConnChange(function(isOnline) {

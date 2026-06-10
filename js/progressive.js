@@ -179,7 +179,7 @@ var Progressive = (function () {
       if (cb) cb(local, false, 0);
     }, 8000);
 
-    _client.rpc('get_ball_call_with_pos', { p_game_id: PROG_GAME_ID })
+    _client.rpc('get_ball_call_with_pos', { p_game_id: 'WABC' }) /* BUG4: shared WABC sequence */
       .then(function (res) {
         clearTimeout(_timer);
         if (res.error || !res.data || !res.data.sequence) {
@@ -228,7 +228,7 @@ var Progressive = (function () {
       return;
     }
 
-    _client.rpc('upsert_ball_call', { p_game_id: PROG_GAME_ID })
+    _client.rpc('upsert_ball_call', { p_game_id: 'WABC' }) /* BUG4: shared WABC sequence */
       .then(function (res) {
         if (res.error || !res.data || !Array.isArray(res.data)) {
           console.warn('[Progressive] refreshBallCall error — using local');
@@ -389,7 +389,7 @@ var Progressive = (function () {
     _client.channel('prog-ball-call')
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'ball_call',
-        filter: 'game_id=eq.' + PROG_GAME_ID
+        filter: 'game_id=eq.WABC' /* BUG4: shared WABC sequence */
       }, function (p) {
         if (!p.new || !p.new.sequence) return;
         var seq = p.new.sequence;
@@ -502,7 +502,7 @@ var Progressive = (function () {
     _ballPosTimer = setTimeout(function() {
       _ballPosTimer = null;
       _client.rpc('update_ball_pos', {
-        p_game_id: PROG_GAME_ID,
+        p_game_id: 'WABC', /* BUG4: shared WABC sequence */
         p_pos:     _lastSentBallPos
       }).then(function(res) {
         if (res.error) console.warn('[Progressive] updateBallPos error:', res.error.message);
@@ -774,7 +774,9 @@ var Progressive = (function () {
   function _checkUnreadMessages() {
     _loadLastSeen();
     _client.from('broadcast_messages').select('*')
-      .gt('id', _lastSeenMessageId).order('id', { ascending: true })
+      .gt('id', _lastSeenMessageId)
+      .not('type', 'in', '("force_local_ball","restore_wide_ball")')
+      .order('id', { ascending: true })
       .then(function(res) {
         if (res.error || !res.data || !res.data.length) return;
         res.data.forEach(function(msg, i) {
@@ -820,6 +822,7 @@ var Progressive = (function () {
     getSessionKey:      getSessionKey,
     getPlayerNickname:  function() { return _playerNickname; },
     isLocalMode:        isLocalMode,
+    _getClient:         function() { return _client; },
     updateBallPos:      updateBallPos,
     getPlayerNum:       getPlayerNum,
     getPlayerLabel:     getPlayerLabel,
