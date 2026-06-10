@@ -271,12 +271,12 @@ function genBallCall(){
   return rng.shuffle(balls);
 }
 
-/* updateBallCallBadge — shows LIVE BALLS or LOCAL in the UI */
+/* updateBallCallBadge — shows LIVE or LOCAL in the UI */
 function updateBallCallBadge(){
   var el=document.getElementById('ball-call-badge');
   if(!el) return;
   if(BG.usingServerBalls){
-    el.textContent='\u25cf WABC';
+    el.textContent='\u25cf LIVE';
     el.style.color='#00ff88';
   } else {
     el.textContent='\u25cf LOCAL';

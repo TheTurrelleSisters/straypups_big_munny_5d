@@ -149,103 +149,28 @@ var Progressive = (function () {
      ═══════════════════════════════════════════════════════════════ */
 
   /*
-   * getBallCall(cb)
-   * Fetches the current server ball sequence for this game_id.
-   * cb(sequence, isServer) — sequence is array[75], isServer=true if from DB.
-   * Falls back to local shuffle immediately if offline.
-   * Timeout: if DB takes >3s, falls back locally and still delivers server
-   * sequence asynchronously when it arrives (game is never stalled).
+   * getBallCall(cb) — v5.39 WABC migration.
+   * Ball sequences are now owned by the WABC operator and delivered via
+   * Supabase Broadcast through wabc.js. This function returns a local
+   * shuffle immediately; wabc.js will sync the real sequence via WABC.onChange().
+   * cb(sequence, isServer, ballPos) — isServer always false from this path.
    */
   function getBallCall(cb) {
-    if (!_isOnline()) {
-      /* Offline — use local immediately */
-      var local = _localBallShuffle();
-      _usingServerBalls = false;
-      if (cb) cb(local, false, 0);
-      return;
-    }
-
-    var _timedOut = false;
-    var _cbFired  = false;
-
-    /* 3-second timeout — fall back locally, still await server async */
-    var _timer = setTimeout(function () {
-      if (_cbFired) return;
-      _timedOut = true;
-      console.warn('[Progressive] getBallCall timeout — using local fallback');
-      var local = _localBallShuffle();
-      _usingServerBalls = false;
-      _cbFired = true;
-      if (cb) cb(local, false, 0);
-    }, 8000);
-
-    _client.rpc('get_ball_call_with_pos', { p_game_id: 'WABC' }) /* BUG4: shared WABC sequence */
-      .then(function (res) {
-        clearTimeout(_timer);
-        if (res.error || !res.data || !res.data.sequence) {
-          console.warn('[Progressive] getBallCall RPC error:', res.error && res.error.message);
-          if (!_cbFired) {
-            var local2 = _localBallShuffle();
-            _usingServerBalls = false;
-            _cbFired = true;
-            if (cb) cb(local2, false, 0);
-          }
-          return;
-        }
-        _serverBallCall = res.data.sequence;
-        var _serverBallPos = res.data.ball_pos || 0;
-        _usingServerBalls = true;
-        if (!_cbFired) {
-          _cbFired = true;
-          /* Pass sequence AND current ball position so joining player starts correctly */
-          if (cb) cb(_serverBallCall.slice(), true, _serverBallPos);
-        } else {
-          _notifyBallCall(_serverBallCall.slice());
-        }
-      })
-      .catch(function (err) {
-        clearTimeout(_timer);
-        console.warn('[Progressive] getBallCall catch:', err);
-        if (!_cbFired) {
-          var local3 = _localBallShuffle();
-          _usingServerBalls = false;
-          _cbFired = true;
-          if (cb) cb(local3, false, 0);
-        }
-      });
+    var local = _localBallShuffle();
+    _usingServerBalls = false;
+    if (cb) cb(local, false, 0);
   }
 
   /*
-   * refreshBallCall(cb)
-   * Called when ball 75 is exhausted. Gets a fresh server sequence.
-   * Falls back to local if offline.
+   * refreshBallCall(cb) — v5.39 WABC migration.
+   * New sequences are now issued by the WABC operator and broadcast via wabc.js.
+   * Returns a local shuffle immediately as placeholder; WABC.onNewCall() will
+   * deliver the real new sequence to all connected players simultaneously.
    */
   function refreshBallCall(cb) {
-    if (!_isOnline()) {
-      var local = _localBallShuffle();
-      _usingServerBalls = false;
-      if (cb) cb(local, false, 0);
-      return;
-    }
-
-    _client.rpc('upsert_ball_call', { p_game_id: 'WABC' }) /* BUG4: shared WABC sequence */
-      .then(function (res) {
-        if (res.error || !res.data || !Array.isArray(res.data)) {
-          console.warn('[Progressive] refreshBallCall error — using local');
-          var local2 = _localBallShuffle();
-          _usingServerBalls = false;
-          if (cb) cb(local2, false, 0);
-          return;
-        }
-        _serverBallCall = res.data;
-        _usingServerBalls = true;
-        if (cb) cb(_serverBallCall.slice(), true);
-      })
-      .catch(function () {
-        var local3 = _localBallShuffle();
-        _usingServerBalls = false;
-        if (cb) cb(local3, false, 0);
-      });
+    var local = _localBallShuffle();
+    _usingServerBalls = false;
+    if (cb) cb(local, false, 0);
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -384,30 +309,9 @@ var Progressive = (function () {
       }).subscribe();
   }
 
-  var _lastIssuedAt = null; /* Track sequence identity — only notify on NEW sequences */
-
-  function _subscribeBallCall() {
-    /* Listen for ball_call updates.
-       IMPORTANT: ball_pos updates every 1.3s — do NOT reset the game on those.
-       Only notify game.js when issued_at changes (= a NEW 75-ball sequence was issued).
-       ball_pos changes are for joining players only (handled in getBallCall). */
-    _client.channel('prog-ball-call')
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'ball_call',
-        filter: 'game_id=eq.WABC'
-      }, function (p) {
-        if (!p.new || !p.new.sequence) return;
-        var seq      = p.new.sequence;
-        var issuedAt = p.new.issued_at || null;
-        if (!Array.isArray(seq)) return;
-        /* Only notify if this is a NEW sequence (issued_at changed) */
-        if (issuedAt && issuedAt === _lastIssuedAt) return; /* same sequence — ignore */
-        _lastIssuedAt     = issuedAt;
-        _serverBallCall   = seq;
-        _usingServerBalls = true;
-        _notifyBallCall(seq.slice());
-      }).subscribe();
-  }
+  /* _subscribeBallCall removed in v5.39 — ball_call postgres_changes subscription
+     eliminated. Ball position is now delivered via WABC Broadcast (wabc.js),
+     removing ~2-3 DB writes/second that saturated the CDC replication pool. */
 
   function _subscribeCommands() {
     _client.channel('prog-commands-' + _sessionKey.substr(0, 4))
@@ -498,24 +402,13 @@ var Progressive = (function () {
      ═══════════════════════════════════════════════════════════════ */
 
   /*
-   * updateBallPos(pos) — called by game every 1.3s via _activeCallNext.
-   * Debounced — only writes to DB if pos changed and 1.3s elapsed.
-   * Updates ball_call.ball_pos so joining players start at correct position.
+   * updateBallPos(pos) — STUBBED in v5.39.
+   * Ball position advances are now sent over WABC Broadcast (wabc.js).
+   * DB tick-writes removed to prevent CDC replication pool saturation.
+   * Checkpoint writes (new sequence, reset) are handled by the WABC operator.
    */
   function updateBallPos(pos) {
-    if (!_connected || !_client) return;
-    if (pos === _lastSentBallPos) return;
-    _lastSentBallPos = pos;
-    if (_ballPosTimer) return; /* debounce */
-    _ballPosTimer = setTimeout(function() {
-      _ballPosTimer = null;
-      _client.rpc('update_ball_pos', {
-        p_game_id: 'WABC', /* BUG4: shared WABC sequence */
-        p_pos:     _lastSentBallPos
-      }).then(function(res) {
-        if (res.error) console.warn('[Progressive] updateBallPos error:', res.error.message);
-      });
-    }, 300); /* 300ms debounce — safely under 1.3s interval */
+    /* no-op — WABC handles broadcast */
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -655,7 +548,7 @@ var Progressive = (function () {
           _subscribeCommands();
           _subscribeHits();
           _subscribePresence();
-          _subscribeBallCall();
+          /* _subscribeBallCall removed v5.39 — WABC Broadcast handles ball position */
           _checkArmedCommand();
           _subscribeMessages();
           _checkUnreadMessages();
