@@ -23,7 +23,8 @@ document.getElementById('hdr-img-el').src=IMG_BANNER.src;
   setTimeout(function(){canDismiss=true;},800);
   sndWelcome();
   function dismiss(){sp.classList.add('fade');setTimeout(function(){sp.style.display='none';sizeLayout();},600);}
-  setTimeout(dismiss,3200);
+  /* 5s auto-dismiss — gives DB time to connect and fetch ball call before game shows */
+  setTimeout(dismiss,5000);
   sp.addEventListener('click',function(){if(canDismiss)dismiss();});
   sp.addEventListener('touchend',function(e){e.preventDefault();if(canDismiss)dismiss();});
 }());

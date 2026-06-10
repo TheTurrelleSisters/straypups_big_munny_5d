@@ -110,7 +110,7 @@ var Progressive = (function () {
   function _loadSDK(cb) {
     if (typeof window !== 'undefined' && window.supabase) { cb(); return; }
     var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.0/dist/umd/supabase.min.js';
     s.onload  = cb;
     s.onerror = function () {
       console.warn('[Progressive] SDK load failed — offline mode.');
@@ -177,7 +177,7 @@ var Progressive = (function () {
       _usingServerBalls = false;
       _cbFired = true;
       if (cb) cb(local, false, 0);
-    }, 3000);
+    }, 8000);
 
     _client.rpc('get_ball_call_with_pos', { p_game_id: PROG_GAME_ID })
       .then(function (res) {
@@ -333,13 +333,26 @@ var Progressive = (function () {
   function _fetchRow(cb) {
     if (!_client) { if (cb) cb(); return; }
     _client.from('progressive').select('*').eq('id', 1).single().then(function (res) {
-      if (res.error) { if (cb) cb(); return; }
+      if (res.error) {
+        console.warn('[Progressive] _fetchRow error:', res.error.message);
+        /* DB reachable but query failed — go local mode */
+        if (!_localMode) _goLocalMode();
+        if (cb) cb();
+        return;
+      }
       var d = res.data;
+      if (!d) { if (cb) cb(); return; }
       _localValue  = parseFloat(d.value)        || _seed;
       _seed        = parseFloat(d.seed)         || _seed;
       _ceiling     = parseFloat(d.ceiling)      || _ceiling;
       _contribRate = parseFloat(d.contrib_rate) || _contribRate;
+      /* If we were in local mode and DB is now responding, go back online */
+      if (_localMode) _goOnlineMode();
       _notifyValue();
+      if (cb) cb();
+    }).catch(function(err) {
+      console.warn('[Progressive] _fetchRow catch:', err);
+      if (!_localMode) _goLocalMode();
       if (cb) cb();
     });
   }
@@ -623,9 +636,13 @@ var Progressive = (function () {
         return;
       }
       try {
-        _client    = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        _connected = true;
+        _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        /* _connected set AFTER DB responds — not before */
         _fetchRow(function () {
+          if (!_localValue || _localValue === 500) {
+            /* _fetchRow succeeded — we have live data */
+          }
+          _connected = true;
           _subscribeValue();
           _subscribeCommands();
           _subscribeHits();
