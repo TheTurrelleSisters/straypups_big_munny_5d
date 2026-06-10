@@ -537,7 +537,7 @@ var Progressive = (function () {
             denom:       PROG_DENOM,
             joinedAt:    new Date().toISOString(),
             playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
-            nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6))
+            nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
             sessionKey:  _sessionKey
           });
         }
