@@ -1,4 +1,4 @@
-var CACHE = 'spbm-v538';
+var CACHE = 'spbm-v539';
 var FILES = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ var FILES = [
   './js/operator.js',
   './js/progressive.js',
   './progressive.js',
+  './wabc.js',
   './broadcast-init.js',
   './assets/splash.jpg',
   './assets/banner.jpg',
