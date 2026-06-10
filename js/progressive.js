@@ -1,16 +1,8 @@
 /*
  * progressive.js — Virtual Progressive Controller
  * Stray-Pup LLC / The Turrelle Sisters LLC
- * v1.3 — Broadcast message onMessage() now exported in public API (was wired
- *         internally but never exported, so games could not register handlers).
+ * v1.2 — Force jackpot, ATTITUDE CHECK, presence, clean rewrite
  * ES5 only. No arrow functions. No const/let. No backticks.
- *
- * CHANGE LOG v1.3
- *   - onMessage(fn) added to returned public API object.
- *     Previously _messageListeners existed and _subscribeMessages() ran, but
- *     the public return block was missing onMessage — so Progressive.onMessage
- *     was undefined in every game and no handler could ever be registered.
- *   - No other logic changes.
  */
 
 var SUPABASE_URL      = 'https://gdmmoeggkqsvqnqyrubx.supabase.co';
@@ -38,17 +30,11 @@ var Progressive = (function () {
   var _sessionKey       = 'sess_' + Math.random().toString(36).substr(2, 9);
 
   /* ── Force jackpot state ── */
-  var _forceArmed       = false;
-  var _forceCommandId   = null;
-  var _forceClaimed     = false;
-  var _onForceWin       = null;
-  var _onForceNotify    = null;
-
-  /* ── Broadcast message state ── */
-  var _messageListeners  = [];
-  var _lastSeenMessageId = 0;
-  var _SEEN_KEY          = 'prog_last_msg_' + PROG_GAME_ID;
-  var _justWon           = false;
+  var _forceArmed       = false;   // operator has armed a force jackpot
+  var _forceCommandId   = null;    // ID of the armed command row
+  var _forceClaimed     = false;   // this session has claimed the force win
+  var _onForceWin       = null;    // callback: function(amt) — called on THIS device when it wins
+  var _onForceNotify    = null;    // callback: function(amt, winnerGame) — ATTITUDE CHECK on others
 
   /* ═══════════════════════════════════════════════════════════════
      SDK LOADER
@@ -56,7 +42,7 @@ var Progressive = (function () {
   function _loadSDK(cb) {
     if (typeof window !== 'undefined' && window.supabase) { cb(); return; }
     var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.0/dist/umd/supabase.min.js';
     s.onload  = cb;
     s.onerror = function () { console.warn('[Progressive] SDK load failed — offline.'); };
     document.head.appendChild(s);
@@ -75,12 +61,6 @@ var Progressive = (function () {
       try { _presenceListeners[i](_presenceCount); } catch (e) {}
     }
   }
-  function _notifyMessage(msg) {
-    for (var i = 0; i < _messageListeners.length; i++) {
-      try { _messageListeners[i](msg); } catch (e) {}
-    }
-    _saveLastSeen(msg.id);
-  }
 
   /* ═══════════════════════════════════════════════════════════════
      DB FETCH
@@ -98,6 +78,7 @@ var Progressive = (function () {
     });
   }
 
+  /* Check if a force jackpot is already armed when we first connect */
   function _checkArmedCommand() {
     _client.from('progressive_commands')
       .select('*').eq('status', 'armed').limit(1).then(function (res) {
@@ -114,11 +95,34 @@ var Progressive = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     REALTIME SUBSCRIPTIONS
+     REALTIME: VALUE + COMMANDS
      ═══════════════════════════════════════════════════════════════ */
+  /* Subscribe to hits — show ATTITUDE CHECK on non-winner devices */
+  function _subscribeHits() {
+    _client.channel('prog-hits-notify')
+      .on('postgres_changes', {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'progressive_hits'
+      }, function (p) {
+        if (!p.new) return;
+        /* Only show if WE didn't just win (check within 5s window) */
+        if (_justWon) return;
+        if (_onForceNotify) {
+          _onForceNotify(
+            parseFloat(p.new.amount) || 0,
+            p.new.game_id || 'another game'
+          );
+        }
+      })
+      .subscribe();
+  }
+
+  var _justWon = false; /* Flag: set when THIS device wins, cleared after 5s */
+
   function _subscribeValue() {
     _client.channel('prog-value')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'progressive', filter: 'id=eq.1' },
+      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'progressive', filter:'id=eq.1' },
         function (p) {
           if (!p.new) return;
           _localValue  = parseFloat(p.new.value)        || _localValue;
@@ -131,8 +135,9 @@ var Progressive = (function () {
   }
 
   function _subscribeCommands() {
-    _client.channel('prog-commands-' + _sessionKey.substr(0, 4))
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'progressive_commands' },
+    _client.channel('prog-commands-' + _sessionKey.substr(0,4))
+      /* New command inserted — arm fires */
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'progressive_commands' },
         function (p) {
           if (!p.new || p.new.command !== 'force_jackpot' || p.new.status !== 'armed') return;
           _forceArmed     = true;
@@ -140,12 +145,18 @@ var Progressive = (function () {
           _forceClaimed   = false;
           console.log('[Progressive] FORCE JACKPOT ARMED — fires on next spin!');
         })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'progressive_commands' },
+      /* Command updated — winner claimed */
+      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'progressive_commands' },
         function (p) {
           if (!p.new || p.new.command !== 'force_jackpot') return;
           if (p.new.status === 'won') {
-            if (p.new.winner_session === _sessionKey) return;
-            _forceArmed     = false;
+            /* Was it us? */
+            if (p.new.winner_session === _sessionKey) {
+              /* We already handled this in _claimForceWin */
+              return;
+            }
+            /* Someone else won — ATTITUDE CHECK */
+            _forceArmed   = false;
             _forceCommandId = null;
             if (_onForceNotify) {
               _onForceNotify(parseFloat(p.new.winner_amt) || 0, p.new.winner_game || 'another game');
@@ -153,55 +164,6 @@ var Progressive = (function () {
           }
         })
       .subscribe();
-  }
-
-  function _subscribeHits() {
-    _client.channel('prog-hits-notify')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'progressive_hits' },
-        function (p) {
-          if (!p.new || _justWon) return;
-          if (_onForceNotify) {
-            _onForceNotify(parseFloat(p.new.amount) || 0, p.new.game_id || 'another game');
-          }
-        })
-      .subscribe();
-  }
-
-  /* ── Broadcast messages ── */
-  function _loadLastSeen() {
-    try {
-      var v = localStorage.getItem(_SEEN_KEY);
-      if (v) _lastSeenMessageId = parseInt(v, 10) || 0;
-    } catch (e) {}
-  }
-
-  function _saveLastSeen(id) {
-    _lastSeenMessageId = id;
-    try { localStorage.setItem(_SEEN_KEY, String(id)); } catch (e) {}
-  }
-
-  function _subscribeMessages() {
-    _client.channel('broadcast-messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'broadcast_messages' },
-        function (p) {
-          if (!p.new) return;
-          _notifyMessage(p.new);
-        })
-      .subscribe();
-  }
-
-  function _checkUnreadMessages() {
-    _loadLastSeen();
-    _client.from('broadcast_messages')
-      .select('*')
-      .gt('id', _lastSeenMessageId)
-      .order('id', { ascending: true })
-      .then(function (res) {
-        if (res.error || !res.data || !res.data.length) return;
-        res.data.forEach(function (msg, i) {
-          setTimeout(function () { _notifyMessage(msg); }, i * 4000);
-        });
-      });
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -212,24 +174,31 @@ var Progressive = (function () {
       config: { presence: { key: _sessionKey } }
     });
     _presenceChannel
-      .on('presence', { event: 'sync' }, function () {
+      .on('presence', { event:'sync' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
-      .on('presence', { event: 'join' }, function () {
+      .on('presence', { event:'join' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
-      .on('presence', { event: 'leave' }, function () {
+      .on('presence', { event:'leave' }, function () {
         _presenceCount = Object.keys(_presenceChannel.presenceState()).length;
         _notifyPresence();
       })
       .subscribe(function (status) {
         if (status === 'SUBSCRIBED') {
+          var _nick = '';
+          try {
+            _nick = (window._playerNickname) ||
+                    localStorage.getItem('tsgc_nickname') || '';
+          } catch(e) {}
           _presenceChannel.track({
-            gameId:   PROG_GAME_ID,
-            denom:    PROG_DENOM,
-            joinedAt: new Date().toISOString()
+            gameId:      PROG_GAME_ID,
+            denom:       PROG_DENOM,
+            joinedAt:    new Date().toISOString(),
+            playerLabel: _nick || null,
+            lastSpin:    null
           });
         }
       });
@@ -252,13 +221,15 @@ var Progressive = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     FORCE WIN CLAIM
+     FORCE WIN CLAIM — called by game engine when force is armed
+     and a spin is initiated on this device
      ═══════════════════════════════════════════════════════════════ */
   function _claimForceWin(onClaimed) {
     if (!_forceCommandId || _forceClaimed) { onClaimed(false); return; }
     _forceClaimed = true;
     var hitAmt = parseFloat(_localValue.toFixed(2));
 
+    /* Atomic claim: update only if still 'armed' */
     _client.from('progressive_commands')
       .update({
         status:         'won',
@@ -268,16 +239,17 @@ var Progressive = (function () {
         won_at:         new Date().toISOString()
       })
       .eq('id', _forceCommandId)
-      .eq('status', 'armed')
+      .eq('status', 'armed')   /* Only succeeds if still armed — race condition safe */
       .select()
       .then(function (res) {
         if (res.error || !res.data || !res.data.length) {
+          /* Someone else got there first */
           _forceClaimed = false;
           onClaimed(false);
           return;
         }
-        _justWon = true;
-        setTimeout(function () { _justWon = false; }, 5000);
+        /* We won! Reset the pot */
+        _justWon = true; setTimeout(function(){ _justWon=false; }, 5000);
         _localValue = _seed;
         _notifyValue();
         _forceArmed = false;
@@ -307,7 +279,8 @@ var Progressive = (function () {
           _checkArmedCommand();
           _subscribeMessages();
           _checkUnreadMessages();
-          setInterval(function () { _fetchRow(null); }, 60000);
+          /* Re-fetch config every 60s to pick up operator ceiling/seed changes */
+          setInterval(function() { _fetchRow(null); }, 60000);
           if (onReady) onReady();
         });
       } catch (e) {
@@ -317,29 +290,73 @@ var Progressive = (function () {
     });
   }
 
+  /*
+   * contribute(betAmt)
+   * Call on every spin start.
+   * If a force jackpot is armed, returns true — game must trigger the jackpot win.
+   * Game calls claimForce(callback) to atomically claim it.
+   */
+  /* Re-send presence payload with current nickname — call after name is known */
+  function retrack() {
+    if (!_presenceChannel) return;
+    var _nick = '';
+    try {
+      _nick = (window._playerNickname) ||
+              localStorage.getItem('tsgc_nickname') || '';
+    } catch(e) {}
+    _presenceChannel.track({
+      gameId:      PROG_GAME_ID,
+      denom:       PROG_DENOM,
+      joinedAt:    new Date().toISOString(),
+      playerLabel: _nick || null,
+      lastSpin:    null
+    });
+  }
+
+  /* registerPlayer — called by game.js on first spin with the player nickname */
+  function registerPlayer(sessionKey, nickname) {
+    if (nickname) {
+      window._playerNickname = nickname;
+      retrack();
+    }
+  }
+
   function contribute(betAmt) {
     if (!betAmt || betAmt <= 0) return false;
     var addition = betAmt * _contribRate;
+    /* Allow pot to grow freely — ceiling is a must-hit-by MAX, not a hard stop.
+       Jackpot triggers via bingo pattern (Class II) at any time regardless of pot size. */
     _localValue  = _localValue + addition;
+    /* Visual cap at ceiling for display — pot shows ceiling value when exceeded */
     if (_localValue > _ceiling) _localValue = _ceiling;
     _notifyValue();
     if (_connected && _client) {
       _pendingAdd += addition;
       _scheduleFlush();
     }
-    return _forceArmed;
+    return _forceArmed; /* true = this spin should be a force jackpot */
   }
 
+  /*
+   * claimForce(onResult)
+   * Called by game engine when contribute() returns true.
+   * onResult(didWin, amount) — if didWin=true, trigger jackpot.
+   * If didWin=false, someone else got there first — spin normally.
+   */
   function claimForce(onResult) {
     _claimForceWin(onResult);
   }
 
+  /*
+   * hit(info) — natural jackpot (bingo pattern / 5OAK)
+   */
   function hit(info) {
     var hitAmt  = parseFloat(_localValue.toFixed(2));
     _localValue = _seed;
     _notifyValue();
+    /* Suppress ATTITUDE CHECK on this device for 5 seconds */
     _justWon = true;
-    setTimeout(function () { _justWon = false; }, 5000);
+    setTimeout(function() { _justWon = false; }, 5000);
     if (_connected && _client) {
       var rec = {
         game_id: PROG_GAME_ID, denom: PROG_DENOM, amount: hitAmt,
@@ -349,7 +366,8 @@ var Progressive = (function () {
       };
       _client.rpc('progressive_hit', { reset_to: _seed });
       _client.from('progressive_hits').insert(rec);
-      setTimeout(function () { _fetchRow(null); }, 1000);
+      /* Re-fetch config after hit to ensure ceiling/seed are fresh */
+      setTimeout(function() { _fetchRow(null); }, 1000);
     }
     return hitAmt;
   }
@@ -362,21 +380,147 @@ var Progressive = (function () {
   function isForceArmed()         { return _forceArmed; }
   function getSessionKey()        { return _sessionKey; }
 
-  function onChange(fn)           { _valueListeners.push(fn); fn(_localValue); }
-  function onPresenceChange(fn)   { _presenceListeners.push(fn); fn(_presenceCount); }
-  function onForceWin(fn)         { _onForceWin    = fn; }
-  function onForceNotify(fn)      { _onForceNotify = fn; }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     BROADCAST MESSAGES
+     Live players get notified instantly via Realtime.
+     Offline players see unread messages on next game load.
+     ═══════════════════════════════════════════════════════════════════ */
+  var _messageListeners  = [];
+  var _lastSeenMessageId = 0;
+  var _SEEN_KEY          = 'prog_last_msg_' + PROG_GAME_ID;
+
+  function _loadLastSeen() {
+    try {
+      var v = localStorage.getItem(_SEEN_KEY);
+      if (v) _lastSeenMessageId = parseInt(v, 10) || 0;
+    } catch(e) {}
+  }
+
+  function _saveLastSeen(id) {
+    _lastSeenMessageId = id;
+    try { localStorage.setItem(_SEEN_KEY, String(id)); } catch(e) {}
+  }
+
+  function _notifyMessage(msg) {
+    for (var i = 0; i < _messageListeners.length; i++) {
+      try { _messageListeners[i](msg); } catch(e) {}
+    }
+    _saveLastSeen(msg.id);
+  }
+
+  /* Subscribe to new messages in realtime */
+  function _subscribeMessages() {
+    _client.channel('broadcast-messages')
+      .on('postgres_changes', {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'broadcast_messages'
+      }, function(p) {
+        if (!p.new) return;
+        _notifyMessage(p.new);
+      })
+      .subscribe();
+  }
+
+  /* On load: fetch any messages player hasn't seen yet */
+  function _checkUnreadMessages() {
+    _loadLastSeen();
+    _client.from('broadcast_messages')
+      .select('*')
+      .gt('id', _lastSeenMessageId)
+      .order('id', { ascending: true })
+      .then(function(res) {
+        if (res.error || !res.data || !res.data.length) return;
+        /* Show messages with a small delay between each */
+        res.data.forEach(function(msg, i) {
+          setTimeout(function() { _notifyMessage(msg); }, i * 4000);
+        });
+      });
+  }
+
+  /* PUBLIC: register callback for incoming messages */
+  function onMessage(fn) { _messageListeners.push(fn); }
+
+
+  /* ═══════════════════════════════════════════════════════════════
+     BALL CALL — server-authoritative sequence shared across devices
+     Schema: ball_call(game_id, sequence jsonb, ball_pos int, issued_at)
+     ═══════════════════════════════════════════════════════════════ */
 
   /*
-   * onMessage(fn)
-   * Register a callback to receive operator broadcast messages.
-   * fn(msg) — msg = { id, title, message, created_at }
-   * Called immediately for any unread messages on load,
-   * then in real-time for new messages while the game is open.
-   * Register this in your game's init block, e.g.:
-   *   Progressive.onMessage(function(msg) { showBroadcastToast(msg.message, msg.title); });
+   * getBallCall(cb)
+   * Fetches the current server ball call sequence for PROG_GAME_ID.
+   * cb(sequence, isServer) — always fires.
+   * If no row exists yet, generates one locally.
    */
-  function onMessage(fn)          { _messageListeners.push(fn); }
+  function getBallCall(cb) {
+    if (!_client) {
+      cb(_genLocalSeq(), false);
+      return;
+    }
+    _client.from('ball_call')
+      .select('sequence, ball_pos')
+      .eq('game_id', PROG_GAME_ID)
+      .single()
+      .then(function(res) {
+        if (res.error || !res.data || !res.data.sequence || !res.data.sequence.length) {
+          /* No server sequence — fall back to local */
+          cb(_genLocalSeq(), false);
+          return;
+        }
+        cb(res.data.sequence, true);
+      })
+      .catch(function() { cb(_genLocalSeq(), false); });
+  }
+
+  /*
+   * refreshBallCall(cb)
+   * Upserts a fresh 75-ball sequence to the server so all clients sync.
+   * cb(sequence, isServer) — always fires.
+   */
+  function refreshBallCall(cb) {
+    if (!_client) {
+      cb(_genLocalSeq(), false);
+      return;
+    }
+    var newSeq = _genLocalSeq();
+    _client.from('ball_call')
+      .upsert({
+        game_id:   PROG_GAME_ID,
+        sequence:  newSeq,
+        ball_pos:  0,
+        issued_at: new Date().toISOString(),
+        issued_by: 'game'
+      }, { onConflict: 'game_id' })
+      .then(function(res) {
+        if (res.error) {
+          console.warn('[Progressive] refreshBallCall upsert error:', res.error.message);
+          cb(newSeq, false);
+          return;
+        }
+        cb(newSeq, true);
+      })
+      .catch(function() { cb(newSeq, false); });
+  }
+
+  /* Generate a locally-shuffled 1-75 sequence (Fisher-Yates) */
+  function _genLocalSeq() {
+    var arr = [];
+    for (var i = 1; i <= 75; i++) arr.push(i);
+    for (var j = arr.length - 1; j > 0; j--) {
+      var k = Math.floor(Math.random() * (j + 1));
+      var tmp = arr[j]; arr[j] = arr[k]; arr[k] = tmp;
+    }
+    return arr;
+  }
+
+  function onChange(fn)           { _valueListeners.push(fn); fn(_localValue); }
+  function onPresenceChange(fn)   { _presenceListeners.push(fn); fn(_presenceCount); }
+
+  /* Register callbacks for force win events */
+  function onForceWin(fn)         { _onForceWin    = fn; }
+  function onForceNotify(fn)      { _onForceNotify = fn; }
 
   return {
     init:             init,
@@ -392,8 +536,12 @@ var Progressive = (function () {
     getSessionKey:    getSessionKey,
     onChange:         onChange,
     onPresenceChange: onPresenceChange,
-    onMessage:        onMessage,   /* v1.3: was missing from public API */
+    onMessage:        onMessage,
     onForceWin:       onForceWin,
-    onForceNotify:    onForceNotify
+    onForceNotify:    onForceNotify,
+    retrack:          retrack,
+    registerPlayer:   registerPlayer,
+    getBallCall:      getBallCall,
+    refreshBallCall:  refreshBallCall
   };
 }());
