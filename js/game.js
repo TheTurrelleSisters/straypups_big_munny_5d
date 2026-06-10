@@ -1364,10 +1364,22 @@ function updateProgMeter(value){
   if(el) el.textContent=fmtMoney(value);
 }
 
+function _setSplashConnStatus(msg, color) {
+  var el = document.getElementById('splash-conn-status');
+  if (el) { el.textContent = msg; if (color) el.style.color = color; }
+}
+function _setSplashBallStatus(msg) {
+  var el = document.getElementById('splash-ball-status');
+  if (el) el.textContent = msg;
+}
+
 function initProgressiveMeter(){
-  if(typeof Progressive==='undefined') return;
+  if(typeof Progressive==='undefined'){
+    _setSplashConnStatus('⚠ Local mode only', '#ffaa00');
+    return;
+  }
+  _setSplashConnStatus('Connecting to wide area…', '#ffaa00');
   Progressive.onChange(updateProgMeter);
-  /* Listen for server ball call updates (new sequence from DB) */
   Progressive.onBallCallUpdate(function(newSeq) {
     if (BG.ballPos > 40 || BG.ballPos === 0) {
       BG.callSeq = newSeq; BG.usingServerBalls = true; BG.ballPos = 0;
@@ -1383,15 +1395,27 @@ function initProgressiveMeter(){
       lbl.classList.toggle('local-mode', !isOnline);
       lbl.textContent = isOnline ? '★ PROGRESSIVE JACKPOT ★' : '★ LOCAL JACKPOT ★';
     }
-    if (val)    val.classList.toggle('local-mode', !isOnline);
+    if (val) val.classList.toggle('local-mode', !isOnline);
     updateBallCallBadge();
     if (typeof Progressive !== 'undefined') updateProgMeter(Progressive.getValue());
   });
   Progressive.init(function(){
+    if (Progressive.isConnected()) {
+      _setSplashConnStatus('✔ Wide area connected', '#00ff88');
+    } else {
+      _setSplashConnStatus('⚠ Local mode — no wide area', '#ffaa00');
+    }
     updateProgMeter(Progressive.getValue());
-    /* Fetch initial server ball call — falls back to local if offline */
+    _setSplashBallStatus('Fetching ball call…');
     fetchServerBallCall(function() {
-      BG.ballPos = 0; /* start sequence from beginning */
+      BG.ballPos = 0;
+      if (BG.usingServerBalls) {
+        _setSplashBallStatus('✔ Wide area ball call ready');
+      } else {
+        _setSplashBallStatus('⚠ Local ball call active');
+      }
+      if (!_ballNodes || _ballNodes.length < 75) buildBallStrip();
+      updateBallCallBadge();
     });
     setTimeout(function(){ sizeLayout(); }, 50);
   });
