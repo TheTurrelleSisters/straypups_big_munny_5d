@@ -1402,14 +1402,14 @@ function initProgressiveMeter(){
   _setSplashConnStatus('Connecting to wide area…', '#ffaa00');
   Progressive.onChange(updateProgMeter);
   Progressive.onBallCallUpdate(function(newSeq) {
-    /* BUG3 FIX: Always adopt new sequence regardless of where player is.
-       Cover All fired on another client — everyone resets immediately.
-       Re-dub current card against new sequence so display stays correct. */
+    /* onBallCallUpdate fires ONLY when issued_at changes (new sequence issued).
+       progressive.js now filters out ball_pos-only updates.
+       This means: Cover All fired, ball 75 exhausted, or operator issued NEW CALL.
+       Reset ballPos and re-dub current card against the new sequence. */
     BG.callSeq = newSeq;
     BG.usingServerBalls = true;
     BG.ballPos = 0;
     updateBallCallBadge();
-    /* If player has a card active, re-dub it against new sequence */
     if (BG.card && Object.keys(BG.cardNumSet).length > 0) {
       BG.matchedCells = {12: true};
       for (var _rb = 0; _rb < 40; _rb++) {
