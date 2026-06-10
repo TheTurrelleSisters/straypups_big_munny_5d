@@ -571,6 +571,10 @@ function stopActiveCaller(){
 }
 function _activeCallNext(){
   BG.ballPos=(BG.ballPos||0)+1;
+  /* Update DB ball position so joining players start at correct ball */
+  if(typeof Progressive!=='undefined' && Progressive.updateBallPos) {
+    Progressive.updateBallPos(BG.ballPos);
+  }
   if(BG.ballPos>=75){
     // All 75 called — fetch new server sequence (or local fallback)
     // New 40 balls populate strip instantly, no blank state
@@ -870,7 +874,8 @@ var CURRENT_SYMS=[5,4,1];
 var CURRENT_GHOSTS=[{above:6,sym:5,below:4},{above:6,sym:4,below:3},{above:3,sym:1,below:6}];
 var CPL=[1,2,3];
 
-function fmt(n){return '$'+(n*DENOM).toFixed(2);} /* $5 denom — credits * DENOM */
+function fmt(n){return '$'+(n*DENOM).toFixed(2);}
+function fmtMoney(n){var v=parseFloat(n);if(isNaN(v))return '$0.00';var p=v.toFixed(2).split('.');p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');return '$'+p.join('.');} /* $5 denom — credits * DENOM */
 function fmtRaw(n){return '$'+n.toFixed(2);} /* raw dollar, no denom mult */
 function updUI(){
   document.getElementById('bval').textContent=fmt(S.bal);
