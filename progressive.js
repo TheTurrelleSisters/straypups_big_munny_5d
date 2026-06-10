@@ -384,19 +384,27 @@ var Progressive = (function () {
       }).subscribe();
   }
 
+  var _lastIssuedAt = null; /* Track sequence identity — only notify on NEW sequences */
+
   function _subscribeBallCall() {
-    /* Listen for new server sequences issued by other sessions */
+    /* Listen for ball_call updates.
+       IMPORTANT: ball_pos updates every 1.3s — do NOT reset the game on those.
+       Only notify game.js when issued_at changes (= a NEW 75-ball sequence was issued).
+       ball_pos changes are for joining players only (handled in getBallCall). */
     _client.channel('prog-ball-call')
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'ball_call',
-        filter: 'game_id=eq.WABC' /* BUG4: shared WABC sequence */
+        filter: 'game_id=eq.WABC'
       }, function (p) {
         if (!p.new || !p.new.sequence) return;
-        var seq = p.new.sequence;
+        var seq      = p.new.sequence;
+        var issuedAt = p.new.issued_at || null;
         if (!Array.isArray(seq)) return;
+        /* Only notify if this is a NEW sequence (issued_at changed) */
+        if (issuedAt && issuedAt === _lastIssuedAt) return; /* same sequence — ignore */
+        _lastIssuedAt     = issuedAt;
         _serverBallCall   = seq;
         _usingServerBalls = true;
-        /* Notify game.js so it can adopt the new sequence seamlessly */
         _notifyBallCall(seq.slice());
       }).subscribe();
   }
