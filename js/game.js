@@ -527,7 +527,12 @@ function _showNextPattern(){
   for(var ci=0;ci<pat.cells.length;ci++) patMatched[pat.cells[ci]]=true;
   renderBingoCard(dummyCells,patMatched,pat.cells);
   // Set name after renderBingoCard so it's the final text shown
-  nameEl.textContent=pat.name.toUpperCase()+' — In '+pat.balls+' Balls | $'+pat.pay[0]+'/$'+pat.pay[1]+'/$'+pat.pay[2];
+  if(pat.isProgressive){
+    nameEl.textContent='\u2605 WIDE AREA PROGRESSIVE \u2605 — Cover All in '+pat.balls+' Balls';
+    nameEl.style.color='#ffd700';
+  } else {
+    nameEl.textContent=pat.name.toUpperCase()+' — In '+pat.balls+' Balls | $'+pat.pay[0]+'/$'+pat.pay[1]+'/$'+pat.pay[2];
+  }
   _showcaseTimer=setTimeout(_showNextPattern,2500);
 }
 
@@ -1208,16 +1213,15 @@ function doSpin(){
           S.bal+=_totalForceAmt;S.lastWin=_totalForceAmt;updUI();
           showProgJP(_totalForceAmt,basePat,rsPatterns,winPatterns,S.cpl,0,_spinCardSerial,_spinBalBefore);
         } else {
-          // Natural bingo progressive — hit() resets pot in DB via callback
-          Progressive.hit({
-            pattern:'Progressive Jackpot',
-            patterns:winPatterns.map(function(p){return p.name;}),
-            balls:25,
-            bet:S.cpl*_denom
-          },function(_progAmt){
-            var _totalProgAmt=_progAmt+_allPatsBonus;
-            S.bal+=_totalProgAmt;S.lastWin=_totalProgAmt;updUI();
-            showProgJP(_totalProgAmt,basePat,rsPatterns,winPatterns,S.cpl,0,_spinCardSerial,_spinBalBefore);
+          /* Natural Cover All — arm in DB then claim atomically.
+             Player 1 gets full pot, Player 2 gets seed amount.
+             Both pay via showProgJP() — same celebration, different amounts.
+             Progressive.hit() never called — DB is sole payment authority. */
+          Progressive.armAndClaim(function(didWin, _progAmt) {
+            var _totalProgAmt = _progAmt + _allPatsBonus;
+            S.bal += _totalProgAmt; S.lastWin = _totalProgAmt; updUI();
+            showProgJP(_totalProgAmt, basePat, rsPatterns, winPatterns,
+                       S.cpl, 0, _spinCardSerial, _spinBalBefore);
           });
         }
         return;
@@ -1256,7 +1260,7 @@ function doSpin(){
         // Override the random card with a guaranteed Cover All card + matching ball call
         var coverAllPatterns=generateCoverAllSpin();
         var _forcePat={
-          name:'Progressive Jackpot',balls:25,pay:[40,80,120],
+          name:'Progressive Jackpot',balls:25,pay:[0,0,0],
           reel:'coverall',cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
           isProgressive:true,_forceAmt:forceAmt
         };

@@ -708,7 +708,53 @@ var Progressive = (function () {
       });
   }
 
-  /* ── Accessors ── */
+  /*
+   * armAndClaim(onResult)
+   * Called when bingo engine detects natural Cover All in <=25 balls.
+   * Arms the jackpot in DB (atomic — only one player succeeds per cycle)
+   * then immediately claims it via claimForce().
+   * onResult(didWin, amount) always fires:
+   *   didWin=true  — player won full pot
+   *   didWin=false — another player won first, pays seed amount
+   * Never calls hit() — DB is sole payment authority.
+   * ES5-safe.
+   */
+  function armAndClaim(onResult) {
+    if (_localMode) {
+      var _localAmt = parseFloat(_localPotValue.toFixed(2));
+      _localPotValue = _localPotSeed;
+      _notifyValue();
+      if (onResult) onResult(true, _localAmt);
+      return;
+    }
+    if (!_connected || !_client) {
+      var _offlineAmt = parseFloat(_localValue.toFixed(2));
+      if (onResult) onResult(true, _offlineAmt);
+      return;
+    }
+    /* Step 1 — arm in DB: atomic, only first caller per cycle succeeds */
+    _client.rpc('arm_force_jackpot').then(function(res) {
+      if (res.error) {
+        console.warn('[Progressive] armAndClaim arm error:', res.error.message);
+      }
+      /* Step 2 — claim immediately: race-safe atomic update */
+      _claimForceWin(function(didWin, claimedAmt) {
+        if (didWin) {
+          if (onResult) onResult(true, claimedAmt);
+        } else {
+          /* Lost the race — pay seed as consolation progressive pay */
+          var _seedAmt = parseFloat(_seed.toFixed(2));
+          if (onResult) onResult(false, _seedAmt);
+        }
+      });
+    }).catch(function(err) {
+      console.warn('[Progressive] armAndClaim catch:', err);
+      var _errAmt = parseFloat(_localValue.toFixed(2));
+      if (onResult) onResult(true, _errAmt);
+    });
+  }
+
+    /* ── Accessors ── */
   function mustHit()            { return _localMode ? (_localPotValue >= _localPotCeiling) : (_localValue >= _ceiling); }
   function getDisplay()         { var v = _localMode ? _localPotValue : _localValue; return '$' + v.toFixed(2); }
   function getValue()           { return _localMode ? _localPotValue : _localValue; }
@@ -732,6 +778,7 @@ var Progressive = (function () {
     init:               init,
     contribute:         contribute,
     claimForce:         claimForce,
+    armAndClaim:        armAndClaim,
     hit:                hit,
     updateLastSpin:     updateLastSpin,
     getBallCall:        getBallCall,

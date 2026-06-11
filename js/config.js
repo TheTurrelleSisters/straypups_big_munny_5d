@@ -137,7 +137,7 @@ var BINGO_PATTERNS = [
    cells:[1,3,7,11,13,17,21,23]},
 
   {name:'Baby Buggy',       balls:35, pay:[10,20,30],      reel:'ch3',
-   cells:[8,10,11,12,13,15,16,17,18,21,23]},
+   cells:[3,4,8,10,11,12,13,15,16,17,18,21,23]},
 
   // ── LOW PAYS ─────────────────────────────────────────────────────────────
   {name:'Small Diamond',    balls:38, pay:[5,10,15],       reel:'mb',
@@ -154,7 +154,7 @@ var BINGO_PATTERNS = [
   // Awards progressive pot PLUS sum of ALL other pattern payouts stacked.
   // Reel shows new StrayPup Progressive symbol (coverall).
   // Do NOT change balls threshold without owner approval.
-  {name:'Progressive Jackpot', balls:25, pay:[40,80,120], reel:'coverall',
+  {name:'Progressive Jackpot', balls:25, pay:[0,0,0],     reel:'coverall',
    cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], isProgressive:true}
 
 ];
