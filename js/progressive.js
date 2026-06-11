@@ -711,12 +711,11 @@ var Progressive = (function () {
   /*
    * armAndClaim(onResult)
    * Called when bingo engine detects natural Cover All in <=25 balls.
-   * Arms the jackpot in DB (atomic — only one player succeeds per cycle)
-   * then immediately claims it via claimForce().
+   * Inserts a force_jackpot command directly (atomic) then claims it
+   * using the returned ID — no Realtime timing dependency.
    * onResult(didWin, amount) always fires:
    *   didWin=true  — player won full pot
    *   didWin=false — another player won first, pays seed amount
-   * Never calls hit() — DB is sole payment authority.
    * ES5-safe.
    */
   function armAndClaim(onResult) {
@@ -732,29 +731,62 @@ var Progressive = (function () {
       if (onResult) onResult(true, _offlineAmt);
       return;
     }
-    /* Step 1 — arm in DB: atomic, only first caller per cycle succeeds */
-    _client.rpc('arm_force_jackpot').then(function(res) {
-      if (res.error) {
-        console.warn('[Progressive] armAndClaim arm error:', res.error.message);
+    /* Safety timeout — never lock the game */
+    var _armed = false;
+    var _safetyTimer = setTimeout(function() {
+      if (_armed) return;
+      console.warn('[Progressive] armAndClaim safety timeout');
+      _armed = true;
+      if (onResult) onResult(true, parseFloat(_localValue.toFixed(2)));
+    }, 10000);
+
+    /* Insert armed command directly — get ID from response for immediate claim */
+    _client.from('progressive_commands').insert({
+      command:     'force_jackpot',
+      status:      'armed',
+      winner_game: PROG_GAME_ID,
+      created_by:  _playerLabel || _sessionKey
+    }).select().then(function(res) {
+      if (res.error || !res.data || !res.data.length) {
+        /* Insert failed — another player may have just armed. Try to find it. */
+        console.warn('[Progressive] armAndClaim insert error:', res.error && res.error.message);
+        _client.from('progressive_commands')
+          .select('*').eq('status', 'armed').eq('command', 'force_jackpot')
+          .limit(1).then(function(r2) {
+            if (r2.error || !r2.data || !r2.data.length) {
+              clearTimeout(_safetyTimer); _armed = true;
+              if (onResult) onResult(false, parseFloat(_seed.toFixed(2)));
+              return;
+            }
+            _forceCommandId = r2.data[0].id;
+            _forceArmed = true; _forceClaimed = false;
+            _claimForceWin(function(didWin, claimedAmt) {
+              clearTimeout(_safetyTimer); _armed = true;
+              if (onResult) onResult(didWin ? true : false,
+                didWin ? claimedAmt : parseFloat(_seed.toFixed(2)));
+            });
+          }).catch(function() {
+            clearTimeout(_safetyTimer); _armed = true;
+            if (onResult) onResult(false, parseFloat(_seed.toFixed(2)));
+          });
+        return;
       }
-      /* Step 2 — claim immediately: race-safe atomic update */
+      /* We inserted it — use returned ID to claim immediately */
+      _forceCommandId = res.data[0].id;
+      _forceArmed = true; _forceClaimed = false;
       _claimForceWin(function(didWin, claimedAmt) {
-        if (didWin) {
-          if (onResult) onResult(true, claimedAmt);
-        } else {
-          /* Lost the race — pay seed as consolation progressive pay */
-          var _seedAmt = parseFloat(_seed.toFixed(2));
-          if (onResult) onResult(false, _seedAmt);
-        }
+        clearTimeout(_safetyTimer); _armed = true;
+        if (onResult) onResult(didWin ? true : false,
+          didWin ? claimedAmt : parseFloat(_seed.toFixed(2)));
       });
     }).catch(function(err) {
+      clearTimeout(_safetyTimer); _armed = true;
       console.warn('[Progressive] armAndClaim catch:', err);
-      var _errAmt = parseFloat(_localValue.toFixed(2));
-      if (onResult) onResult(true, _errAmt);
+      if (onResult) onResult(true, parseFloat(_localValue.toFixed(2)));
     });
   }
 
-    /* ── Accessors ── */
+  /* ── Accessors ── */
   function mustHit()            { return _localMode ? (_localPotValue >= _localPotCeiling) : (_localValue >= _ceiling); }
   function getDisplay()         { var v = _localMode ? _localPotValue : _localValue; return '$' + v.toFixed(2); }
   function getValue()           { return _localMode ? _localPotValue : _localValue; }

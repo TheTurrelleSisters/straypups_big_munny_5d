@@ -707,12 +707,13 @@ function doBingoSpin(){
      see the exact same sequence. genBallCall() never called in wide area mode.
      Local: only generate new sequence if exhausted or none loaded. */
   if(BG.usingServerBalls && typeof WABC !== 'undefined') {
-    /* Wide area — re-sync to live WABC state */
+    /* Wide area — sync sequence only. Never overwrite player's own ballPos.
+       WABC.getBallPos() is the operator broadcast position, not player position.
+       Player position is BG.ballPos which _activeCallNext() advances locally. */
     var _wabcSeq = WABC.getSequence();
     if(_wabcSeq && _wabcSeq.length === 75) {
       BG.callSeq = _wabcSeq;
-      var _livePos = WABC.getBallPos();
-      prevBallPos = (_livePos > 40 ? _livePos : 40);
+      /* prevBallPos stays as BG.ballPos — player's own position */
     }
     BG.seqExhausted = false;
   } else {
@@ -1169,13 +1170,28 @@ function doSpin(){
     if(!BG.entTimer) startActiveCaller();
     var spinData;
     if(winPatterns.length===0){
-      var attempts=0;
-      do{spinData=genSpinResult();attempts++;}
-      while(evalSpin(buildGrid(spinData.syms,spinData.ghosts)).amt>0&&attempts<200);
+      /* Class II: bingo determines all outcomes. Reels are cosmetic only.
+         No evalSpin rejection loop — any symbol including Progressive (id:7)
+         can appear on a no-bingo spin. The visual does not need to match
+         the bingo result. */
+      spinData=genSpinResult();
     } else {
-      winPatterns.sort(function(a,b){return a.pay[0]-b.pay[0];});
+      /* Sort non-progressive patterns ascending by pay.
+         Keep progressive pattern separate so it never sorts to position 0
+         (pay=[0,0,0] would make it basePat which breaks the flow). */
       var _progInWins=false;
-      for(var _rpi=0;_rpi<winPatterns.length;_rpi++){if(winPatterns[_rpi].isProgressive){_progInWins=true;break;}}
+      var _nonProgPats=[];
+      for(var _rpi=0;_rpi<winPatterns.length;_rpi++){
+        if(winPatterns[_rpi].isProgressive){_progInWins=true;}
+        else{_nonProgPats.push(winPatterns[_rpi]);}
+      }
+      _nonProgPats.sort(function(a,b){return a.pay[0]-b.pay[0];});
+      /* Progressive goes LAST so basePat is always the lowest non-prog pattern */
+      if(_progInWins){
+        winPatterns=_nonProgPats.concat(winPatterns.filter(function(p){return p.isProgressive;}));
+      } else {
+        winPatterns=_nonProgPats;
+      }
       spinData=_progInWins
         ?forcedSpinResult(REEL_SYMS['coverall'])
         :forcedSpinResult(REEL_SYMS[winPatterns[0].reel]||REEL_SYMS['none']);
@@ -1192,7 +1208,8 @@ function doSpin(){
 
       var _denom=(typeof DENOM!=='undefined'?DENOM:1);
       var basePat=winPatterns[0];
-      var rsPatterns=winPatterns.slice(1);
+      /* rsPatterns = patterns for Red Spin — exclude progressive (handled separately) */
+      var rsPatterns=winPatterns.slice(1).filter(function(p){return !p.isProgressive;});
 
       // Detect progressive BEFORE crediting base pay — prevents double-credit + wrong toast
       var _progPat=null;
@@ -1258,7 +1275,9 @@ function doSpin(){
     Progressive.claimForce(function(didWin,forceAmt){
       if(didWin){
         // Override the random card with a guaranteed Cover All card + matching ball call
+        var _savedUsingServer=BG.usingServerBalls;
         var coverAllPatterns=generateCoverAllSpin();
+        BG.usingServerBalls=_savedUsingServer; // restore — generateCoverAllSpin sets false
         var _forcePat={
           name:'Progressive Jackpot',balls:25,pay:[0,0,0],
           reel:'coverall',cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
