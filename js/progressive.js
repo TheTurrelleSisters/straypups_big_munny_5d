@@ -43,6 +43,7 @@ var Progressive = (function () {
   var _flushTimer        = null;
   var _valueListeners    = [];
   var _presenceChannel   = null;
+  var _joinedAt          = null;
   var _presenceCount     = 0;
   var _presenceListeners = [];
   var _sessionKey        = 'sess_' + Math.random().toString(36).substr(2, 9);
@@ -252,7 +253,26 @@ var Progressive = (function () {
     });
   }
 
-  /* ═══════════════════════════════════════════════════════════════
+  /*
+   * updateLastSpin()
+   * Call on every spin press to update the player's lastSpin timestamp
+   * in the presence channel. Keeps the progressive operator's
+   * active/inactive display accurate. ES5-safe.
+   */
+  function updateLastSpin() {
+    if (!_presenceChannel || !_playerRegistered) return;
+    _presenceChannel.track({
+      gameId:      PROG_GAME_ID,
+      denom:       PROG_DENOM,
+      joinedAt:    _joinedAt || new Date().toISOString(),
+      playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
+      nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
+      sessionKey:  _sessionKey,
+      lastSpin:    new Date().toISOString()
+    });
+  }
+
+    /* ═══════════════════════════════════════════════════════════════
      DB FETCH
      ═══════════════════════════════════════════════════════════════ */
   function _fetchRow(cb) {
@@ -433,13 +453,15 @@ var Progressive = (function () {
       })
       .subscribe(function (status) {
         if (status === 'SUBSCRIBED') {
+          _joinedAt = new Date().toISOString();
           _presenceChannel.track({
             gameId:      PROG_GAME_ID,
             denom:       PROG_DENOM,
-            joinedAt:    new Date().toISOString(),
+            joinedAt:    _joinedAt,
             playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
             nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
-            sessionKey:  _sessionKey
+            sessionKey:  _sessionKey,
+            lastSpin:    null
           });
         }
       });
@@ -711,6 +733,7 @@ var Progressive = (function () {
     contribute:         contribute,
     claimForce:         claimForce,
     hit:                hit,
+    updateLastSpin:     updateLastSpin,
     getBallCall:        getBallCall,
     refreshBallCall:    refreshBallCall,
     registerPlayer:     registerPlayer,

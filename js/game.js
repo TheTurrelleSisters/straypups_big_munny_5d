@@ -1143,6 +1143,8 @@ function doSpin(){
     _forceJP=Progressive.contribute(S.cpl*DENOM);
     /* Register player on first spin — safe to call multiple times */
     Progressive.registerPlayer(null, window._playerNickname || null);
+    /* Update lastSpin timestamp so operator active/inactive display stays accurate */
+    if(Progressive.updateLastSpin) Progressive.updateLastSpin();
   }
   var _spinBalBefore=S.bal+S.cpl*DENOM; var _spinCardSerial=BG.cardSerial;
   setWin(0,'');document.getElementById('bt-box').classList.remove('on');
