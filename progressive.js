@@ -259,8 +259,19 @@ var Progressive = (function () {
    * in the presence channel. Keeps the progressive operator's
    * active/inactive display accurate. ES5-safe.
    */
+  var _lastSpinTrackTime = 0;
+  var _lastSpinTime      = null;
+  var _TRACK_THROTTLE_MS = 30000; /* Only broadcast presence every 30s max */
+
   function updateLastSpin() {
     if (!_presenceChannel || !_playerRegistered) return;
+    /* Always store the last spin time locally */
+    _lastSpinTime = new Date().toISOString();
+    /* Throttle presence track() — Supabase rate limits rapid calls.
+       Only broadcast if 30 seconds have passed since last track(). */
+    var now = Date.now();
+    if (now - _lastSpinTrackTime < _TRACK_THROTTLE_MS) return;
+    _lastSpinTrackTime = now;
     _presenceChannel.track({
       gameId:      PROG_GAME_ID,
       denom:       PROG_DENOM,
@@ -268,7 +279,7 @@ var Progressive = (function () {
       playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
       nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
       sessionKey:  _sessionKey,
-      lastSpin:    new Date().toISOString()
+      lastSpin:    _lastSpinTime
     });
   }
 
