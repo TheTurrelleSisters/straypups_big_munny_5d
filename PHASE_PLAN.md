@@ -127,3 +127,13 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
 - [ ] progressive_hits records writing correctly
 - [ ] Full jackpot flow end-to-end test
 - [ ] Neon.tech migration planning
+
+### v5.56 — Jackpot Card Generation Fix
+- generateCoverAllSpin() rebuilt — now uses actual WABC sequence
+- Builds special card from first 25 balls of BG.callSeq respecting column constraints
+- B=1-15, I=16-30, N=31-45, G=46-60, O=61-75
+- Cell 12 (free space) always null and always pre-daubed
+- usingServerBalls stays true throughout — LIVE badge never changes
+- Cover All triggers _requestNewWABCSequence for fresh sequence
+- Removed unnecessary usingServerBalls save/restore
+- Cache bust: spbm-v556
