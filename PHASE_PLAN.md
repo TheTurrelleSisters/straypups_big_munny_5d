@@ -9,7 +9,7 @@
 ---
 
 ## Repo Overview
-Class II bingo PWA. $5 denomination. All wins determined by bingo patterns. Reels are cosmetic. Connects to WABC for wide-area ball call and Progressive for WAP jackpot.
+Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reels are cosmetic. Connects to WABC for wide-area ball call and Progressive for WAP jackpot.
 
 ---
 
@@ -95,3 +95,35 @@ Class II bingo PWA. $5 denomination. All wins determined by bingo patterns. Reel
 - Version bumps: 0.1 per delivery
 - Root copies of game.js and progressive.js must always match js/ versions
 - Cache bust on every single build — no exceptions
+
+### v5.52 — Duplicate WABC Channels Fix
+- progressive.js now sets window._wabcSupabaseClient = _client
+- wabc.js was looking for this but progressive.js only set _floorSupabaseClient
+- Without it each game created its own Supabase client and wabc-ballpos channel
+- This caused 4 separate WABC channels instead of 1 shared channel
+- Cache bust: spbm-v552
+
+### v5.53 — progressive_hits Insert Fix
+- Added 500ms delay before progressive_hits insert after progressive_hit RPC
+- RPC and insert were firing back-to-back causing silent insert failures
+- Added .then() error logging for both _claimForceWin and hit() paths
+- Cache bust: spbm-v553
+
+### v5.54 — Presence Rate Limit Fix (CRITICAL)
+- updateLastSpin() was calling _presenceChannel.track() on EVERY spin
+- This caused ClientPresenceRateLimitReached errors flooding Supabase
+- Rate limit terminated entire Realtime tenant — killed ALL tool connections
+- Fixed: track() now throttled to max once per 30 seconds
+- Last spin time stored locally on every spin, only broadcast every 30s
+- Cache bust: spbm-v554
+
+---
+
+## Current Version: v5.54 (cache: spbm-v554)
+
+## Pending
+- [ ] Confirm operator tools connect after presence throttle fix
+- [ ] Confirm single wabc-ballpos channel (not 4)
+- [ ] progressive_hits records writing correctly
+- [ ] Full jackpot flow end-to-end test
+- [ ] Neon.tech migration planning

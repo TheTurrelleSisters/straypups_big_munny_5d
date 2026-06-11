@@ -87,16 +87,41 @@ var WABC = (function() {
 
   /* ── INITIAL STATE FETCH ── */
   function _fetchInitial(cb) {
+    /* Use maybeSingle() — .single() throws error when WABC row missing,
+       causing empty sequence and game falling back to local ball call */
     _client.from('ball_call')
       .select('sequence, ball_pos, issued_at')
       .eq('game_id', 'WABC')
-      .single()
+      .maybeSingle()
       .then(function(res) {
-        if (!res.error && res.data) {
+        if (res.error) {
+          console.warn('[WABC] _fetchInitial error:', res.error.message);
+          if (cb) cb();
+          return;
+        }
+        if (res.data) {
           _sequence  = res.data.sequence  || [];
           _ballPos   = res.data.ball_pos  || 0;
           _issuedAt  = res.data.issued_at || null;
+        } else {
+          /* Row missing — request new sequence so all players get one */
+          console.warn('[WABC] No WABC row found — requesting new sequence');
+          if (_client) {
+            _client.rpc('upsert_ball_call', { p_game_id: 'WABC' })
+              .then(function(r) {
+                if (!r.error && r.data) {
+                  _sequence = r.data.sequence  || [];
+                  _ballPos  = 0;
+                  _issuedAt = r.data.issued_at || new Date().toISOString();
+                }
+                if (cb) cb();
+              }).catch(function() { if (cb) cb(); });
+            return;
+          }
         }
+        if (cb) cb();
+      }).catch(function(err) {
+        console.warn('[WABC] _fetchInitial catch:', err);
         if (cb) cb();
       });
   }

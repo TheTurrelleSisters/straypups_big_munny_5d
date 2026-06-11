@@ -763,10 +763,10 @@ var Progressive = (function () {
     var _armed = false;
     var _safetyTimer = setTimeout(function() {
       if (_armed) return;
-      console.warn('[Progressive] armAndClaim safety timeout');
+      console.warn('[Progressive] armAndClaim safety timeout — paying local value');
       _armed = true;
       if (onResult) onResult(true, parseFloat(_localValue.toFixed(2)));
-    }, 10000);
+    }, 5000);
 
     /* Insert armed command directly — get ID from response for immediate claim */
     _client.from('progressive_commands').insert({

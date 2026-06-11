@@ -1296,10 +1296,13 @@ function doSpin(){
       }
 
       if(_progPat&&typeof Progressive!=='undefined'){
+        /* Sum ONLY the patterns that actually won — not all 20 patterns.
+           rsPatterns drives Red Spin animation for each winning pattern.
+           _allPatsBonus is the total of all non-progressive winners. */
         var _allPatsBonus=0;
-        for(var _api=0;_api<BINGO_PATTERNS.length;_api++){
-          if(!BINGO_PATTERNS[_api].isProgressive){
-            _allPatsBonus+=BINGO_PATTERNS[_api].pay[S.cpl-1]*_denom;
+        for(var _api=0;_api<winPatterns.length;_api++){
+          if(!winPatterns[_api].isProgressive){
+            _allPatsBonus+=winPatterns[_api].pay[S.cpl-1]*_denom;
           }
         }
         if(_progPat._forceAmt){
