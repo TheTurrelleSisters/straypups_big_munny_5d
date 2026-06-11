@@ -620,11 +620,13 @@ function _activeCallNext(){
     Progressive.updateBallPos(BG.ballPos);
   }
   if(BG.ballPos>=75){
-    /* Sequence exhausted — stop caller and freeze until player spins.
-       Wide area: WABC broadcast keeps ticking; player re-syncs on next spin.
+    /* Sequence exhausted — stop caller, request new sequence immediately.
+       Wide area: request new sequence from DB and broadcast to all players.
+       New sequence arrives via WABC.onNewCall() before next spin press.
        Local: genBallCall() runs on next spin press via doBingoSpin(). */
     stopActiveCaller();
     BG.seqExhausted=true;
+    _requestNewWABCSequence();
     return;
   }
   var newBall=BG.callSeq[BG.ballPos-1];
@@ -653,6 +655,8 @@ function _handleCoverAll(hasPenny){
   stopActiveCaller();
   BG.seqExhausted=true;
   updateBallCallBadge();
+  /* Cover All — request new sequence for all players */
+  _requestNewWABCSequence();
   setTimeout(function(){
     nameEl.textContent=' ';nameEl.style.color='';
   },2500);
@@ -731,6 +735,37 @@ function generateCoverAllSpin(){
   return winPatterns;
 }
 
+/* _requestNewWABCSequence — called when ball 75 exhausted or Cover All occurs.
+   Requests a new 75-ball sequence from DB via upsert_ball_call RPC then
+   broadcasts new_call on wabc-ballpos so ALL connected players receive it
+   simultaneously via their WABC.onNewCall() handler.
+   Race-safe: upsert is atomic, last writer wins but all players get same seq.
+   Only runs in wide area mode. No-op if offline or WABC not connected. */
+function _requestNewWABCSequence() {
+  if(!BG.usingServerBalls) return;
+  if(!window._floorSupabaseClient) return;
+  window._floorSupabaseClient.rpc('upsert_ball_call', { p_game_id: 'WABC' })
+    .then(function(res) {
+      if(res.error || !res.data) {
+        console.warn('[WABC] _requestNewWABCSequence error:', res.error && res.error.message);
+        return;
+      }
+      var _newSeq = res.data.sequence  || [];
+      var _newIAt = res.data.issued_at || new Date().toISOString();
+      if(_newSeq.length !== 75) return;
+      /* Broadcast to all players — wabc-ballpos channel */
+      if(window._wabcChannel) {
+        window._wabcChannel.send({
+          type:    'broadcast',
+          event:   'new_call',
+          payload: { sequence: _newSeq, issued_at: _newIAt }
+        });
+      }
+    }).catch(function(err) {
+      console.warn('[WABC] _requestNewWABCSequence catch:', err);
+    });
+}
+
 function doBingoSpin(){
   stopPatternCycle();
 
@@ -742,13 +777,15 @@ function doBingoSpin(){
      see the exact same sequence. genBallCall() never called in wide area mode.
      Local: only generate new sequence if exhausted or none loaded. */
   if(BG.usingServerBalls && typeof WABC !== 'undefined') {
-    /* Wide area — sync sequence only. Never overwrite player's own ballPos.
-       WABC.getBallPos() is the operator broadcast position, not player position.
-       Player position is BG.ballPos which _activeCallNext() advances locally. */
+    /* Wide area — always read current WABC sequence.
+       _activeCallNext already called _requestNewWABCSequence at ball 75.
+       WABC.onNewCall() will have updated BG.callSeq if broadcast arrived.
+       If seqExhausted and new sequence not yet received, request again as fallback. */
     var _wabcSeq = WABC.getSequence();
-    if(_wabcSeq && _wabcSeq.length === 75) {
-      BG.callSeq = _wabcSeq;
-      /* prevBallPos stays as BG.ballPos — player's own position */
+    if(_wabcSeq && _wabcSeq.length === 75) BG.callSeq = _wabcSeq;
+    if(BG.seqExhausted) {
+      _requestNewWABCSequence(); /* fallback if broadcast not yet received */
+      prevBallPos = 40;
     }
     BG.seqExhausted = false;
   } else {

@@ -180,6 +180,8 @@ var WABC = (function() {
       }
       _fetchInitial(function() {
         _subscribe();
+        /* Expose channel so game can broadcast new_call on sequence exhaustion */
+        window._wabcChannel = _channel;
         if (onReady) onReady();
       });
     });

@@ -428,7 +428,8 @@ var Progressive = (function () {
    * Checkpoint writes (new sequence, reset) are handled by the WABC operator.
    */
   function updateBallPos(pos) {
-    /* no-op — WABC handles broadcast */
+    /* no-op — ball position is per-player local only.
+       Never written to DB or broadcast. CDC replication protection. */
   }
 
   /* ═══════════════════════════════════════════════════════════════
