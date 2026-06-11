@@ -436,8 +436,12 @@ var Progressive = (function () {
      PRESENCE
      ═══════════════════════════════════════════════════════════════ */
   function _subscribePresence() {
-    /* Expose client for Floor Manager game_history writes */
+    /* Expose client for Floor Manager writes and WABC client reuse.
+       _wabcSupabaseClient MUST be set before WABC.init() runs so wabc.js
+       reuses this client instead of creating its own — prevents duplicate
+       Supabase clients and multiple wabc-ballpos channel subscriptions. */
     window._floorSupabaseClient = _client;
+    window._wabcSupabaseClient  = _client;
     _presenceChannel = _client.channel('presence-lobby', {
       config: { presence: { key: _sessionKey } }
     });
@@ -514,18 +518,23 @@ var Progressive = (function () {
           return;
         }
         _client.rpc('progressive_hit', { reset_to: _seed }).then(function () {
-          _client.from('progressive_hits').insert({
-            game_id:        PROG_GAME_ID,
-            denom:          PROG_DENOM,
-            amount:         hitAmt,
-            pattern:        'Force Jackpot',
-            balls:          0,
-            bet:            0,
-            player_session: _sessionKey,
-            player_label:   _playerLabel || _sessionKey,
-            game_title:     PROG_GAME_TITLES[PROG_GAME_ID] || PROG_GAME_ID,
-            win_patterns:   'Force Jackpot'
-          });
+          /* Small delay to ensure RPC transaction commits before insert */
+          setTimeout(function() {
+            _client.from('progressive_hits').insert({
+              game_id:        PROG_GAME_ID,
+              denom:          PROG_DENOM,
+              amount:         hitAmt,
+              pattern:        'Force Jackpot',
+              balls:          0,
+              bet:            0,
+              player_session: _sessionKey,
+              player_label:   _playerLabel || _sessionKey,
+              game_title:     PROG_GAME_TITLES[PROG_GAME_ID] || PROG_GAME_ID,
+              win_patterns:   'Force Jackpot'
+            }).then(function(r) {
+              if (r.error) console.warn('[Progressive] _claimForceWin hit insert error:', r.error.message);
+            });
+          }, 500);
           clearTimeout(_safetyTimer);
           _justWon = true;
           setTimeout(function () { _justWon = false; }, 5000);
@@ -656,7 +665,12 @@ var Progressive = (function () {
     _client.rpc('progressive_hit', { reset_to: _seed })
       .then(function (rpcRes) {
         if (rpcRes.error) console.warn('[Progressive] hit RPC error:', rpcRes.error.message);
-        _client.from('progressive_hits').insert(rec);
+        /* Delay insert to ensure RPC transaction commits first */
+        setTimeout(function() {
+          _client.from('progressive_hits').insert(rec).then(function(r) {
+            if (r.error) console.warn('[Progressive] hit() insert error:', r.error.message);
+          });
+        }, 500);
         setTimeout(function () { _fetchRow(null); }, 1000);
         if (_hitSafety) clearTimeout(_hitSafety);
         if (onDone) { onDone(hitAmt); onDone = null; }
