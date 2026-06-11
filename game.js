@@ -23,7 +23,8 @@ document.getElementById('hdr-img-el').src=IMG_BANNER.src;
   setTimeout(function(){canDismiss=true;},800);
   sndWelcome();
   function dismiss(){sp.classList.add('fade');setTimeout(function(){sp.style.display='none';sizeLayout();},600);}
-  setTimeout(dismiss,3200);
+  /* 5s auto-dismiss — gives DB time to connect and fetch ball call before game shows */
+  setTimeout(dismiss,5000);
   sp.addEventListener('click',function(){if(canDismiss)dismiss();});
   sp.addEventListener('touchend',function(e){e.preventDefault();if(canDismiss)dismiss();});
 }());
@@ -193,7 +194,7 @@ var REEL_SYMS={
 var BG={
   card:[],cardSerial:'',callSeq:[],cardNumSet:{},matchedCells:{},
   winPatterns:[],ballPos:0,entTimer:null,patternCycle:null,cycleIdx:0,
-  _coverAll1to40:false,usingServerBalls:false
+  _coverAll1to40:false,usingServerBalls:false,seqExhausted:false
 };
 var COL_RANGES=[[1,15],[16,30],[31,45],[46,60],[61,75]];
 
@@ -256,7 +257,42 @@ function genBingoCard(){
 }
 
 // opLog is defined in operator.js; stub here so game.js never throws
-function opLog(rec){if(typeof opLogImpl==='function') opLogImpl(rec);}
+function opLog(rec){if(typeof opLogImpl==='function') opLogImpl(rec); _writeGameHistory(rec);}
+
+/* _writeGameHistory — writes every game event to Supabase game_history table.
+   Non-blocking fire-and-forget. Never stalls the game.
+   Requires Progressive to be connected (has the Supabase client). */
+function _writeGameHistory(rec) {
+  if (typeof Progressive === 'undefined' || !Progressive.isConnected()) return;
+  var _client = window._floorSupabaseClient;
+  if (!_client) return;
+  var _denom = (typeof DENOM !== 'undefined' ? DENOM : 1);
+  var _gameId = (typeof PROG_GAME_ID !== 'undefined') ? PROG_GAME_ID : 'straypups_1d';
+  var _gameTitle = _gameId === 'straypups_5d' ? 'StrayPups Big Munny $5' : 'StrayPups Big Munny $1';
+  var row = {
+    game_id:       _gameId,
+    game_title:    _gameTitle,
+    denom:         _denom,
+    event_type:    rec.type || 'SPIN',
+    game_serial:   rec.gameSerial   || null,
+    card_serial:   rec.cardSerial   || null,
+    session_key:   typeof Progressive !== 'undefined' ? Progressive.getSessionKey() : null,
+    nickname:      window._playerNickname || null,
+    bet:           parseFloat(rec.bet)       || 0,
+    win:           parseFloat(rec.win)       || 0,
+    bal_before:    parseFloat(rec.balBefore) || 0,
+    bal_after:     parseFloat(rec.balAfter)  || 0,
+    patterns:      (rec.patterns && rec.patterns.length) ? rec.patterns : [],
+    balls_to_win:  rec.balls        || 0,
+    is_progressive:rec.isProgressive || false,
+    prog_amount:   rec.progAmount   || null,
+    archived:      false
+  };
+  /* CASH_IN stores amount in bet field; CASH_OUT stores in win field */
+  if (rec.type === 'CASH_IN')  { row.bet = parseFloat(rec.amount) || 0; row.win = 0; }
+  if (rec.type === 'CASH_OUT') { row.win = parseFloat(rec.amount) || 0; row.bet = 0; }
+  try { _client.from('game_history').insert(row); } catch(e) {}
+}
 function genGameSerial(){
   var t=Date.now().toString(16);
   var r=Math.floor(Math.random()*0xffff).toString(16).toUpperCase();
@@ -270,12 +306,12 @@ function genBallCall(){
   return rng.shuffle(balls);
 }
 
-/* updateBallCallBadge — shows LIVE BALLS or LOCAL in the UI */
+/* updateBallCallBadge — shows LIVE or LOCAL in the UI */
 function updateBallCallBadge(){
   var el=document.getElementById('ball-call-badge');
   if(!el) return;
   if(BG.usingServerBalls){
-    el.textContent='\u25cf LIVE BALLS';
+    el.textContent='\u25cf LIVE';
     el.style.color='#00ff88';
   } else {
     el.textContent='\u25cf LOCAL';
@@ -526,7 +562,12 @@ function _showNextPattern(){
   for(var ci=0;ci<pat.cells.length;ci++) patMatched[pat.cells[ci]]=true;
   renderBingoCard(dummyCells,patMatched,pat.cells);
   // Set name after renderBingoCard so it's the final text shown
-  nameEl.textContent=pat.name.toUpperCase()+' — In '+pat.balls+' Balls | $'+pat.pay[0]+'/$'+pat.pay[1]+'/$'+pat.pay[2];
+  if(pat.isProgressive){
+    nameEl.textContent='\u2605 WIDE AREA PROGRESSIVE \u2605 — Cover All in '+pat.balls+' Balls';
+    nameEl.style.color='#ffd700';
+  } else {
+    nameEl.textContent=pat.name.toUpperCase()+' — In '+pat.balls+' Balls | $'+pat.pay[0]+'/$'+pat.pay[1]+'/$'+pat.pay[2];
+  }
   _showcaseTimer=setTimeout(_showNextPattern,2500);
 }
 
@@ -549,12 +590,15 @@ function _showNextPattern(){
 /* -- SILENT CALLER (game load + Cover All idle only) -- */
 var _silentTimer=null;
 function startSilentCaller(){
+  /* Silent caller: player is idle — keep sequence current but do NOT advance ballPos.
+     ballPos is only advanced by _activeCallNext during active gameplay.
+     Between spins the sequence stays frozen at current position. */
   stopSilentCaller();
   stopActiveCaller(); // silent and active are mutually exclusive
-  _silentTimer=setInterval(function(){
-    BG.ballPos=(BG.ballPos||0)+1;
-    if(BG.ballPos>=75){ refreshServerBallCall(function(){ BG.ballPos=0; }); }
-  },1300);
+  /* No-op timer — sequence stays live via realtime subscription */
+  _silentTimer = setInterval(function(){
+    /* Intentionally empty — ballPos not advanced when idle */
+  }, 30000);
 }
 function stopSilentCaller(){
   if(_silentTimer){clearInterval(_silentTimer);_silentTimer=null;}
@@ -571,24 +615,17 @@ function stopActiveCaller(){
 }
 function _activeCallNext(){
   BG.ballPos=(BG.ballPos||0)+1;
+  /* Update DB ball position so joining players start at correct ball */
+  if(typeof Progressive!=='undefined' && Progressive.updateBallPos) {
+    Progressive.updateBallPos(BG.ballPos);
+  }
   if(BG.ballPos>=75){
-    // All 75 called — fetch new server sequence (or local fallback)
-    // New 40 balls populate strip instantly, no blank state
-    refreshServerBallCall(function(newSeq) {
-      BG.ballPos=40; // jump straight to ball 40 — all pre-called balls shown
-      if(BG.card){
-        // Re-evaluate which of the new 40 balls match the current card
-        BG.matchedCells={12:true};
-        for(var _nb=0;_nb<40;_nb++){
-          var _ball=BG.callSeq[_nb];
-          if(BG.cardNumSet[_ball]!==undefined) BG.matchedCells[BG.cardNumSet[_ball]]=true;
-        }
-        renderBingoCard(BG.card,BG.matchedCells,null);
-        renderBallStrip(BG.callSeq,40,BG.cardNumSet);
-      }
-      updateBallCallBadge();
-    });
-    return; // wait for callback before advancing
+    /* Sequence exhausted — stop caller and freeze until player spins.
+       Wide area: WABC broadcast keeps ticking; player re-syncs on next spin.
+       Local: genBallCall() runs on next spin press via doBingoSpin(). */
+    stopActiveCaller();
+    BG.seqExhausted=true;
+    return;
   }
   var newBall=BG.callSeq[BG.ballPos-1];
   // Daub card if ball matches
@@ -609,19 +646,16 @@ function _handleCoverAll(hasPenny){
   nameEl.textContent=hasPenny?'GAME END — COVER ALL $0.01':'GAME END — COVER ALL';
   nameEl.style.color='#ffcc00';
   if(hasPenny){S.bal+=0.01;updUI();}
-  // Reset ball sequence
-  BG.callSeq=genBallCall();
-  BG.ballPos=0;
+  /* v5.40: Stop caller and freeze — new sequence is picked up on next spin press.
+     Wide area: player re-syncs to WABC live position on spin.
+     Local: doBingoSpin() generates new sequence on spin press.
+     Do NOT fetch or generate a new sequence here. */
+  stopActiveCaller();
+  BG.seqExhausted=true;
+  updateBallCallBadge();
   setTimeout(function(){
-    nameEl.textContent=' ';nameEl.style.color='';
-    if(BG.card) renderBallStrip(BG.callSeq,0,BG.cardNumSet);
+    nameEl.textContent=' ';nameEl.style.color='';
   },2500);
-  // Switch to silent only if player is idle (not spinning)
-  if(!S.spinning){
-    stopActiveCaller();
-    startSilentCaller();
-  }
-  // If spinning: active caller keeps running with new sequence — no interruption
 }
 
 /* Legacy aliases so existing call sites don't break */
@@ -701,13 +735,29 @@ function doBingoSpin(){
   stopPatternCycle();
 
   // Preserve how many balls have been revealed so far.
-  // Only regenerate sequence if we haven't started or all 75 were exhausted.
   var prevBallPos=BG.ballPos||0;
-  if(!BG.callSeq||BG.callSeq.length!==75||prevBallPos===0){
-    /* No sequence yet — use whatever is in BG.callSeq (set by fetchServerBallCall at init) */
-    /* If still empty, fall back to local */
-    if(!BG.callSeq||BG.callSeq.length!==75) BG.callSeq=genBallCall();
-    prevBallPos=0;
+
+  /* v5.40 sequence sync — two paths based on wide area vs local mode.
+     Wide area: ALWAYS re-sync from WABC on spin press so all players
+     see the exact same sequence. genBallCall() never called in wide area mode.
+     Local: only generate new sequence if exhausted or none loaded. */
+  if(BG.usingServerBalls && typeof WABC !== 'undefined') {
+    /* Wide area — sync sequence only. Never overwrite player's own ballPos.
+       WABC.getBallPos() is the operator broadcast position, not player position.
+       Player position is BG.ballPos which _activeCallNext() advances locally. */
+    var _wabcSeq = WABC.getSequence();
+    if(_wabcSeq && _wabcSeq.length === 75) {
+      BG.callSeq = _wabcSeq;
+      /* prevBallPos stays as BG.ballPos — player's own position */
+    }
+    BG.seqExhausted = false;
+  } else {
+    /* Local mode — generate new sequence only if exhausted or none loaded */
+    if(BG.seqExhausted || !BG.callSeq || BG.callSeq.length !== 75){
+      BG.callSeq = genBallCall();
+      prevBallPos = 0;
+      BG.seqExhausted = false;
+    }
   }
 
   // Fresh card for this spin
@@ -810,10 +860,12 @@ function evalSpin(grid){
   var L=[grid[0][1],grid[1][1],grid[2][1]];
   // Any cherry on any reel = always looks like Open Diamond pay
   if(L[0]===5||L[1]===5||L[2]===5) return{amt:1};
-  // Gap on any reel with no cherry = safe non-win
+  // Any wild (SP=0 or Progressive=7) on payline = win-looking = rejected.
+  // 2x Progressive combos only appear via forcedSpinResult on bingo wins.
+  // On no-bingo spins, Progressive symbol must not appear on payline at all.
+  if(L[0]===0||L[0]===7||L[1]===0||L[1]===7||L[2]===0||L[2]===7) return{amt:1};
+  // Gap on any reel = safe non-win
   if(L[0]===6||L[1]===6||L[2]===6) return{amt:0};
-  // Any wild
-  if(L[0]===0||L[1]===0||L[2]===0) return{amt:1};
   // 3 of a kind
   if(L[0]===L[1]&&L[1]===L[2]) return{amt:1};
   // All 3 are bars in any mix
@@ -871,7 +923,8 @@ var CURRENT_GHOSTS=[{above:6,sym:5,below:4},{above:6,sym:4,below:3},{above:3,sym
 var CPL=[1,2,3];
 
 function fmt(n){return '$'+(n*DENOM).toFixed(2);}
-function fmtRaw(n){return '$'+n.toFixed(2);}
+function fmtMoney(n){var v=parseFloat(n);if(isNaN(v))return '$0.00';var p=v.toFixed(2).split('.');p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');return '$'+p.join('.');} /* $5 denom — credits * DENOM */
+function fmtRaw(n){return '$'+n.toFixed(2);} /* raw dollar, no denom mult */
 function updUI(){
   document.getElementById('bval').textContent=fmt(S.bal);
   _savePlayerState();
@@ -962,9 +1015,9 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
 
   // Build spin strip: random symbols (mix of all ids including blanks) + final 3
   // Use 18 scroll symbols so phase 1 has plenty of tape flying through
-  var SPIN_SYM_IDS=[0,1,2,3,4,5,6];
+  var SPIN_SYM_IDS=[0,1,2,3,4,5,6,7];
   var spinSyms=[];
-  for(var i=0;i<18;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,6)]);
+  for(var i=0;i<18;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,7)]);
   spinSyms.push(finalGhost.above2);
   spinSyms.push(finalGhost.above);
   spinSyms.push(finalGhost.sym);
@@ -1133,6 +1186,8 @@ function doSpin(){
     _forceJP=Progressive.contribute(S.cpl*DENOM);
     /* Register player on first spin — safe to call multiple times */
     Progressive.registerPlayer(null, window._playerNickname || null);
+    /* Update lastSpin timestamp so operator active/inactive display stays accurate */
+    if(Progressive.updateLastSpin) Progressive.updateLastSpin();
   }
   var _spinBalBefore=S.bal+S.cpl*DENOM; var _spinCardSerial=BG.cardSerial;
   setWin(0,'');document.getElementById('bt-box').classList.remove('on');
@@ -1152,13 +1207,32 @@ function doSpin(){
     if(!BG.entTimer) startActiveCaller();
     var spinData;
     if(winPatterns.length===0){
+      /* Class II: bingo said no win — reel visual must NOT look like a win.
+         evalSpin filters out combos that would mislead the player.
+         id:7 (Progressive) is treated as a wild so any combo containing it
+         looks like a win — correctly filtered out on no-bingo spins.
+         Cherry on any reel also looks like a win (Open Diamond) — filtered.
+         Max 200 attempts before accepting whatever comes up. */
       var attempts=0;
       do{spinData=genSpinResult();attempts++;}
       while(evalSpin(buildGrid(spinData.syms,spinData.ghosts)).amt>0&&attempts<200);
     } else {
-      winPatterns.sort(function(a,b){return a.pay[0]-b.pay[0];});
+      /* Sort non-progressive patterns ascending by pay.
+         Keep progressive pattern separate so it never sorts to position 0
+         (pay=[0,0,0] would make it basePat which breaks the flow). */
       var _progInWins=false;
-      for(var _rpi=0;_rpi<winPatterns.length;_rpi++){if(winPatterns[_rpi].isProgressive){_progInWins=true;break;}}
+      var _nonProgPats=[];
+      for(var _rpi=0;_rpi<winPatterns.length;_rpi++){
+        if(winPatterns[_rpi].isProgressive){_progInWins=true;}
+        else{_nonProgPats.push(winPatterns[_rpi]);}
+      }
+      _nonProgPats.sort(function(a,b){return a.pay[0]-b.pay[0];});
+      /* Progressive goes LAST so basePat is always the lowest non-prog pattern */
+      if(_progInWins){
+        winPatterns=_nonProgPats.concat(winPatterns.filter(function(p){return p.isProgressive;}));
+      } else {
+        winPatterns=_nonProgPats;
+      }
       spinData=_progInWins
         ?forcedSpinResult(REEL_SYMS['coverall'])
         :forcedSpinResult(REEL_SYMS[winPatterns[0].reel]||REEL_SYMS['none']);
@@ -1175,7 +1249,8 @@ function doSpin(){
 
       var _denom=(typeof DENOM!=='undefined'?DENOM:1);
       var basePat=winPatterns[0];
-      var rsPatterns=winPatterns.slice(1);
+      /* rsPatterns = patterns for Red Spin — exclude progressive (handled separately) */
+      var rsPatterns=winPatterns.slice(1).filter(function(p){return !p.isProgressive;});
 
       // Detect progressive BEFORE crediting base pay — prevents double-credit + wrong toast
       var _progPat=null;
@@ -1196,16 +1271,15 @@ function doSpin(){
           S.bal+=_totalForceAmt;S.lastWin=_totalForceAmt;updUI();
           showProgJP(_totalForceAmt,basePat,rsPatterns,winPatterns,S.cpl,0,_spinCardSerial,_spinBalBefore);
         } else {
-          // Natural bingo progressive — hit() resets pot in DB via callback
-          Progressive.hit({
-            pattern:'Progressive Jackpot',
-            patterns:winPatterns.map(function(p){return p.name;}),
-            balls:25,
-            bet:S.cpl*_denom
-          },function(_progAmt){
-            var _totalProgAmt=_progAmt+_allPatsBonus;
-            S.bal+=_totalProgAmt;S.lastWin=_totalProgAmt;updUI();
-            showProgJP(_totalProgAmt,basePat,rsPatterns,winPatterns,S.cpl,0,_spinCardSerial,_spinBalBefore);
+          /* Natural Cover All — arm in DB then claim atomically.
+             Player 1 gets full pot, Player 2 gets seed amount.
+             Both pay via showProgJP() — same celebration, different amounts.
+             Progressive.hit() never called — DB is sole payment authority. */
+          Progressive.armAndClaim(function(didWin, _progAmt) {
+            var _totalProgAmt = _progAmt + _allPatsBonus;
+            S.bal += _totalProgAmt; S.lastWin = _totalProgAmt; updUI();
+            showProgJP(_totalProgAmt, basePat, rsPatterns, winPatterns,
+                       S.cpl, 0, _spinCardSerial, _spinBalBefore);
           });
         }
         return;
@@ -1242,9 +1316,11 @@ function doSpin(){
     Progressive.claimForce(function(didWin,forceAmt){
       if(didWin){
         // Override the random card with a guaranteed Cover All card + matching ball call
+        var _savedUsingServer=BG.usingServerBalls;
         var coverAllPatterns=generateCoverAllSpin();
+        BG.usingServerBalls=_savedUsingServer; // restore — generateCoverAllSpin sets false
         var _forcePat={
-          name:'Progressive Jackpot',balls:25,pay:[40,80,120],
+          name:'Progressive Jackpot',balls:25,pay:[0,0,0],
           reel:'coverall',cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
           isProgressive:true,_forceAmt:forceAmt
         };
@@ -1263,21 +1339,28 @@ function renderHelp(){
   var b=document.getElementById('help-body');b.innerHTML='';
   var s1=document.createElement('div');s1.className='hsec';
   s1.innerHTML='<div class="hstl">HOW TO PLAY</div>'+
-    '<div class="hln">- <span>Class II Bingo machine</span> â€” bingo determines all outcomes</div>'+
+    '<div class="hln">- <span>Class II Bingo machine</span> - bingo determines all outcomes</div>'+
     '<div class="hln">- New bingo card generated every spin</div>'+
-    '<div class="hln">- First 40 balls determine win â€” rest are entertainment</div>'+
+    '<div class="hln">- First 40 balls determine win - rest are entertainment</div>'+
     '<div class="hln">- Multiple patterns trigger <span>Red Spin Bonus</span></div>'+
     '<div class="hln">- Any cherry on payline pays Open Diamond</div>';
   b.appendChild(s1);
   var s2=document.createElement('div');s2.className='hsec';
-  s2.innerHTML='<div class="hstl">TOP PATTERNS (BET 1)</div>'+
-    '<div class="hln"><span>Corporal Stripes</span> â€” $800 (JACKPOT)</div>'+
-    '<div class="hln"><span>Cross Corners</span> â€” $320</div>'+
-    '<div class="hln"><span>Pyramid / The Kite</span> â€” $160</div>'+
-    '<div class="hln"><span>Four Leaf Clover</span> â€” $100</div>'+
-    '<div class="hln"><span>Double Cross / Arrowhead</span> â€” $80</div>'+
-    '<div class="hln"><span>Valentine</span> â€” $50</div>';
+  s2.innerHTML='<div class="hstl">WILD SYMBOLS</div>'+
+    '<div class="hln"><span>SP (Stray Pup)</span> - Wild on all reels. Bingo pattern determines pay.</div>'+
+    '<div class="hln"><span>Progressive (Prog)</span> - Wild on all reels. Bingo pattern determines pay.</div>'+
+    '<div class="hln"><span>SP + Prog mix</span> - 2 of a kind visual. Bingo pattern determines pay.</div>'+
+    '<div class="hln"><span>Prog Prog Prog</span> - Wide Area Progressive Jackpot (Cover All in 25 balls)</div>';
   b.appendChild(s2);
+  var s3=document.createElement('div');s3.className='hsec';
+  s3.innerHTML='<div class="hstl">TOP PATTERNS (BET 1)</div>'+
+    '<div class="hln"><span>Corporal Stripes</span> - $800 (JACKPOT)</div>'+
+    '<div class="hln"><span>Cross Corners</span> - $320</div>'+
+    '<div class="hln"><span>Pyramid / The Kite</span> - $160</div>'+
+    '<div class="hln"><span>Four Leaf Clover</span> - $100</div>'+
+    '<div class="hln"><span>Double Cross / Arrowhead</span> - $80</div>'+
+    '<div class="hln"><span>Valentine</span> - $50</div>';
+  b.appendChild(s3);
 }
 
 /* â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -1322,7 +1405,8 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
           startPatternCycle(winPatterns);
           opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
             bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-            win:S.lastWin,
+            win:S.lastWin, balls:25,
+            isProgressive:true, progAmount:S.lastWin,
             patterns:winPatterns.map(function(p){return p.name;}),
             balBefore:balBefore, balAfter:S.bal});
           _spinDebounce = Date.now(); updUI(); S.spinning = false; setCtrl(true);
@@ -1341,7 +1425,8 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
       startPatternCycle(winPatterns);
       opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
         bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-        win:S.lastWin,
+        win:S.lastWin, balls:25,
+        isProgressive:true, progAmount:S.lastWin,
         patterns:winPatterns.map(function(p){return p.name;}),
         balBefore:balBefore, balAfter:S.bal});
       _spinDebounce = Date.now(); S.spinning = false; setCtrl(true); updUI();
@@ -1364,38 +1449,6 @@ function updateProgMeter(value){
   if(el) el.textContent=fmtMoney(value);
 }
 
-/* ── BROADCAST TOAST v1.3 ─────────────────────────────────────────────────────
-   Shows operator broadcast messages as a persistent gold overlay.
-   Auto-dismisses after 12 seconds. Tap to dismiss early.
-   ─────────────────────────────────────────────────────────────────────────── */
-function showBroadcastToast(body,title){
-  var DURATION_MS=12000;
-  var el=document.getElementById('broadcast-toast');
-  if(!el){
-    el=document.createElement('div');
-    el.id='broadcast-toast';
-    el.style.cssText=[
-      'position:fixed','bottom:90px','left:50%','transform:translateX(-50%)',
-      'background:rgba(10,10,30,0.96)','color:#ffd700',
-      'border:2px solid #ffd700','border-radius:10px',
-      'padding:14px 20px','max-width:88vw','width:340px',
-      'font-size:14px','line-height:1.45','text-align:center',
-      'z-index:9999','box-shadow:0 4px 24px rgba(0,0,0,0.85)',
-      'cursor:pointer','display:none'
-    ].join(';');
-    document.body.appendChild(el);
-  }
-  var html='';
-  if(title) html+='<div style="font-weight:bold;font-size:15px;margin-bottom:6px;">'+title+'</div>';
-  html+='<div>'+body+'</div>';
-  html+='<div style="margin-top:8px;font-size:11px;color:#aaa;">(tap to dismiss)</div>';
-  el.innerHTML=html;
-  el.style.display='block';
-  el.onclick=function(){clearTimeout(el._timer);el.style.display='none';};
-  clearTimeout(el._timer);
-  el._timer=setTimeout(function(){el.style.display='none';},DURATION_MS);
-}
-
 function _setSplashConnStatus(msg, color) {
   var el = document.getElementById('splash-conn-status');
   if (el) { el.textContent = msg; if (color) el.style.color = color; }
@@ -1404,60 +1457,173 @@ function _setSplashBallStatus(msg) {
   var el = document.getElementById('splash-ball-status');
   if (el) el.textContent = msg;
 }
+
 function initProgressiveMeter(){
   if(typeof Progressive==='undefined'){
-    _setSplashConnStatus('\u26a0 Local mode only', '#ffaa00');
+    _setSplashConnStatus('⚠ Local mode only', '#ffaa00');
     return;
   }
-  _setSplashConnStatus('Connecting to wide area\u2026', '#ffaa00');
+  _setSplashConnStatus('Connecting to wide area…', '#ffaa00');
   Progressive.onChange(updateProgMeter);
-  Progressive.onBallCallUpdate(function(newSeq){
-    if(BG.ballPos>40||BG.ballPos===0){
-      BG.callSeq=newSeq;BG.usingServerBalls=true;BG.ballPos=0;
-      clearBallStrip();updateBallCallBadge();
-    }
-  });
-  Progressive.onConnChange(function(isOnline){
-    var banner=document.getElementById('prog-offline-banner');
-    var lbl=document.getElementById('prog-meter-lbl');
-    var val=document.getElementById('prog-meter-val');
-    if(banner) banner.classList.toggle('show',!isOnline);
-    if(lbl){
-      lbl.classList.toggle('local-mode',!isOnline);
-      lbl.textContent=isOnline?'\u2605 PROGRESSIVE JACKPOT \u2605':'\u2605 LOCAL JACKPOT \u2605';
-    }
-    if(val) val.classList.toggle('local-mode',!isOnline);
+  Progressive.onBallCallUpdate(function(newSeq) {
+    /* onBallCallUpdate fires ONLY when issued_at changes (new sequence issued).
+       progressive.js now filters out ball_pos-only updates.
+       This means: Cover All fired, ball 75 exhausted, or operator issued NEW CALL.
+       Reset ballPos and re-dub current card against the new sequence. */
+    BG.callSeq = newSeq;
+    BG.usingServerBalls = true;
+    BG.ballPos = 0;
     updateBallCallBadge();
-    if(typeof Progressive!=='undefined') updateProgMeter(Progressive.getValue());
+    if (BG.card && Object.keys(BG.cardNumSet).length > 0) {
+      BG.matchedCells = {12: true};
+      for (var _rb = 0; _rb < 40; _rb++) {
+        var _rball = BG.callSeq[_rb];
+        if (BG.cardNumSet[_rball] !== undefined)
+          BG.matchedCells[BG.cardNumSet[_rball]] = true;
+      }
+      renderBingoCard(BG.card, BG.matchedCells, null);
+      renderBallStrip(BG.callSeq, 40, BG.cardNumSet);
+    } else {
+      clearBallStrip();
+    }
   });
-  Progressive.onMessage(function(msg){
-    if(!msg||!msg.message) return;
-    showBroadcastToast(msg.message,msg.title||'');
-  });
-  Progressive.onForceNotify(function(amt,gameId){
-    var label=gameId&&gameId!=='unknown'?gameId:'another game';
-    toast('\u2605 JACKPOT HIT on '+label+'! $'+amt.toFixed(2));
+  Progressive.onConnChange(function(isOnline) {
+    var banner = document.getElementById('prog-offline-banner');
+    var lbl    = document.getElementById('prog-meter-lbl');
+    var val    = document.getElementById('prog-meter-val');
+    if (banner) banner.classList.toggle('show', !isOnline);
+    if (lbl) {
+      lbl.classList.toggle('local-mode', !isOnline);
+      lbl.textContent = isOnline ? '★ PROGRESSIVE JACKPOT ★' : '★ LOCAL JACKPOT ★';
+    }
+    if (val) val.classList.toggle('local-mode', !isOnline);
+    updateBallCallBadge();
+    if (typeof Progressive !== 'undefined') updateProgMeter(Progressive.getValue());
   });
   Progressive.init(function(){
-    if(Progressive.isConnected()){
-      _setSplashConnStatus('\u2714 Wide area connected', '#00ff88');
+    if (Progressive.isConnected()) {
+      _setSplashConnStatus('✔ Wide area connected', '#00ff88');
     } else {
-      _setSplashConnStatus('\u26a0 Local mode \u2014 no wide area', '#ffaa00');
+      _setSplashConnStatus('⚠ Local mode — no wide area', '#ffaa00');
     }
     updateProgMeter(Progressive.getValue());
-    _setSplashBallStatus('Fetching ball call\u2026');
-    fetchServerBallCall(function(){
-      BG.ballPos=0;
-      if(BG.usingServerBalls){
-        _setSplashBallStatus('\u2714 Wide area ball call ready');
-      } else {
-        _setSplashBallStatus('\u26a0 Local ball call active');
-      }
+
+    /* v5.40 — Wire WABC for ball call sequence.
+       WABC is independent of Progressive (WAP jackpot).
+       Progressive owns the pot; WABC owns the ball sequence. */
+    _setSplashBallStatus('Fetching ball call…');
+    if(typeof WABC !== 'undefined') {
+      WABC.init(function() {
+        var _seq = WABC.getSequence();
+        if(_seq && _seq.length === 75) {
+          BG.callSeq = _seq;
+          BG.ballPos = 40;
+          BG.usingServerBalls = true;
+          BG.seqExhausted = false;
+          /* Daub first 40 balls against initial card if one exists */
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _ib=0;_ib<40;_ib++){
+              var _iball=BG.callSeq[_ib];
+              if(BG.cardNumSet[_iball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_iball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+          }
+          if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
+          renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          _setSplashBallStatus('✔ Wide area ball call ready');
+        } else {
+          /* WABC returned empty — fall back to local */
+          BG.callSeq = genBallCall();
+          BG.ballPos = 40;
+          BG.usingServerBalls = false;
+          BG.seqExhausted = false;
+          if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
+          renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          _setSplashBallStatus('⚠ Local ball call active');
+        }
+        updateBallCallBadge();
+
+        /* ── WABC event hooks ── registered once here, never re-registered */
+
+        /* Operator issued Reset — new sequence, all players fast-forward to 40 */
+        WABC.onNewCall(function(newSeq) {
+          if(!newSeq||newSeq.length!==75) return;
+          BG.callSeq = newSeq;
+          BG.ballPos = 40;
+          BG.usingServerBalls = true;
+          BG.seqExhausted = false;
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _nc=0;_nc<40;_nc++){
+              var _ncball=BG.callSeq[_nc];
+              if(BG.cardNumSet[_ncball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_ncball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+            renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          }
+          updateBallCallBadge();
+        });
+
+        /* Operator forced local — all players switch to local ball call */
+        WABC.onForceLocal(function() {
+          BG.callSeq = genBallCall();
+          BG.ballPos = 40;
+          BG.usingServerBalls = false;
+          BG.seqExhausted = false;
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _fl=0;_fl<40;_fl++){
+              var _flball=BG.callSeq[_fl];
+              if(BG.cardNumSet[_flball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_flball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+            renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          }
+          updateBallCallBadge();
+          toast('⚠ Switched to local ball call');
+        });
+
+        /* Operator restored wide area — re-sync all players to WABC sequence */
+        WABC.onRestoreWide(function(restoredSeq) {
+          if(!restoredSeq||restoredSeq.length!==75) return;
+          BG.callSeq = restoredSeq;
+          BG.ballPos = 40;
+          BG.usingServerBalls = true;
+          BG.seqExhausted = false;
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _rw=0;_rw<40;_rw++){
+              var _rwball=BG.callSeq[_rw];
+              if(BG.cardNumSet[_rwball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_rwball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+            renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          }
+          updateBallCallBadge();
+          toast('✔ Wide area ball call restored');
+        });
+
+        /* WABC.onChange NOT wired — each player drives BG.ballPos locally */
+      });
+    } else {
+      /* WABC not loaded — fall back to local */
+      BG.callSeq = genBallCall();
+      BG.ballPos = 40;
+      BG.usingServerBalls = false;
+      BG.seqExhausted = false;
       if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
+      renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+      _setSplashBallStatus('⚠ Local ball call active');
       updateBallCallBadge();
-    });
-    setTimeout(function(){ sizeLayout(); },50);
+    }
+    setTimeout(function(){ sizeLayout(); }, 50);
   });
+
 }
 
 /* -- INIT -- */

@@ -435,6 +435,8 @@ var Progressive = (function () {
      PRESENCE
      ═══════════════════════════════════════════════════════════════ */
   function _subscribePresence() {
+    /* Expose client for Floor Manager game_history writes */
+    window._floorSupabaseClient = _client;
     _presenceChannel = _client.channel('presence-lobby', {
       config: { presence: { key: _sessionKey } }
     });

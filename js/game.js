@@ -257,7 +257,42 @@ function genBingoCard(){
 }
 
 // opLog is defined in operator.js; stub here so game.js never throws
-function opLog(rec){if(typeof opLogImpl==='function') opLogImpl(rec);}
+function opLog(rec){if(typeof opLogImpl==='function') opLogImpl(rec); _writeGameHistory(rec);}
+
+/* _writeGameHistory — writes every game event to Supabase game_history table.
+   Non-blocking fire-and-forget. Never stalls the game.
+   Requires Progressive to be connected (has the Supabase client). */
+function _writeGameHistory(rec) {
+  if (typeof Progressive === 'undefined' || !Progressive.isConnected()) return;
+  var _client = window._floorSupabaseClient;
+  if (!_client) return;
+  var _denom = (typeof DENOM !== 'undefined' ? DENOM : 1);
+  var _gameId = (typeof PROG_GAME_ID !== 'undefined') ? PROG_GAME_ID : 'straypups_1d';
+  var _gameTitle = _gameId === 'straypups_5d' ? 'StrayPups Big Munny $5' : 'StrayPups Big Munny $1';
+  var row = {
+    game_id:       _gameId,
+    game_title:    _gameTitle,
+    denom:         _denom,
+    event_type:    rec.type || 'SPIN',
+    game_serial:   rec.gameSerial   || null,
+    card_serial:   rec.cardSerial   || null,
+    session_key:   typeof Progressive !== 'undefined' ? Progressive.getSessionKey() : null,
+    nickname:      window._playerNickname || null,
+    bet:           parseFloat(rec.bet)       || 0,
+    win:           parseFloat(rec.win)       || 0,
+    bal_before:    parseFloat(rec.balBefore) || 0,
+    bal_after:     parseFloat(rec.balAfter)  || 0,
+    patterns:      (rec.patterns && rec.patterns.length) ? rec.patterns : [],
+    balls_to_win:  rec.balls        || 0,
+    is_progressive:rec.isProgressive || false,
+    prog_amount:   rec.progAmount   || null,
+    archived:      false
+  };
+  /* CASH_IN stores amount in bet field; CASH_OUT stores in win field */
+  if (rec.type === 'CASH_IN')  { row.bet = parseFloat(rec.amount) || 0; row.win = 0; }
+  if (rec.type === 'CASH_OUT') { row.win = parseFloat(rec.amount) || 0; row.bet = 0; }
+  try { _client.from('game_history').insert(row); } catch(e) {}
+}
 function genGameSerial(){
   var t=Date.now().toString(16);
   var r=Math.floor(Math.random()*0xffff).toString(16).toUpperCase();
@@ -825,10 +860,12 @@ function evalSpin(grid){
   var L=[grid[0][1],grid[1][1],grid[2][1]];
   // Any cherry on any reel = always looks like Open Diamond pay
   if(L[0]===5||L[1]===5||L[2]===5) return{amt:1};
-  // Gap on any reel with no cherry = safe non-win
-  if(L[0]===6||L[1]===6||L[2]===6) return{amt:0};
-  // Any wild (SP=0 or Progressive=7)
+  // Any wild (SP=0 or Progressive=7) on payline = win-looking = rejected.
+  // 2x Progressive combos only appear via forcedSpinResult on bingo wins.
+  // On no-bingo spins, Progressive symbol must not appear on payline at all.
   if(L[0]===0||L[0]===7||L[1]===0||L[1]===7||L[2]===0||L[2]===7) return{amt:1};
+  // Gap on any reel = safe non-win
+  if(L[0]===6||L[1]===6||L[2]===6) return{amt:0};
   // 3 of a kind
   if(L[0]===L[1]&&L[1]===L[2]) return{amt:1};
   // All 3 are bars in any mix
@@ -1170,11 +1207,15 @@ function doSpin(){
     if(!BG.entTimer) startActiveCaller();
     var spinData;
     if(winPatterns.length===0){
-      /* Class II: bingo determines all outcomes. Reels are cosmetic only.
-         No evalSpin rejection loop — any symbol including Progressive (id:7)
-         can appear on a no-bingo spin. The visual does not need to match
-         the bingo result. */
-      spinData=genSpinResult();
+      /* Class II: bingo said no win — reel visual must NOT look like a win.
+         evalSpin filters out combos that would mislead the player.
+         id:7 (Progressive) is treated as a wild so any combo containing it
+         looks like a win — correctly filtered out on no-bingo spins.
+         Cherry on any reel also looks like a win (Open Diamond) — filtered.
+         Max 200 attempts before accepting whatever comes up. */
+      var attempts=0;
+      do{spinData=genSpinResult();attempts++;}
+      while(evalSpin(buildGrid(spinData.syms,spinData.ghosts)).amt>0&&attempts<200);
     } else {
       /* Sort non-progressive patterns ascending by pay.
          Keep progressive pattern separate so it never sorts to position 0
@@ -1364,7 +1405,8 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
           startPatternCycle(winPatterns);
           opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
             bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-            win:S.lastWin,
+            win:S.lastWin, balls:25,
+            isProgressive:true, progAmount:S.lastWin,
             patterns:winPatterns.map(function(p){return p.name;}),
             balBefore:balBefore, balAfter:S.bal});
           _spinDebounce = Date.now(); updUI(); S.spinning = false; setCtrl(true);
@@ -1383,7 +1425,8 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
       startPatternCycle(winPatterns);
       opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
         bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-        win:S.lastWin,
+        win:S.lastWin, balls:25,
+        isProgressive:true, progAmount:S.lastWin,
         patterns:winPatterns.map(function(p){return p.name;}),
         balBefore:balBefore, balAfter:S.bal});
       _spinDebounce = Date.now(); S.spinning = false; setCtrl(true); updUI();
