@@ -43,15 +43,17 @@ var JP    = [800, 1600, 2500]; // SP-SP-SP jackpot (per bet level)
    Controls how often each symbol lands on the payline during non-bingo spins.
    Weights must sum to exactly 32768.
    id: symbol ID  |  w: weight (higher = more frequent)
+   Symbol IDs: 0=SP(Wild)  1=Seven  2=3-Bar  3=2-Bar  4=1-Bar  5=Cherry  6=Blank  7=Progressive(Wild)
    ─────────────────────────────────────────────────────────────────────────── */
 var VSTOP_TABLE = [
-  {id:6, w:16384},  // Gap (blank) — lands on empty tape, unambiguous visual loss
+  {id:6, w:15884},  // Gap (blank) — reduced from 16384 to accommodate id:7
   {id:5, w: 8000},  // Cherry
   {id:4, w: 4000},  // 1-Bar
   {id:3, w: 2000},  // 2-Bar
   {id:2, w: 1200},  // 3-Bar
   {id:1, w:  684},  // Seven
-  {id:0, w:  500}   // SP (Wild)
+  {id:0, w:  500},  // SP (Wild)
+  {id:7, w:  500}   // Progressive (Wild) — mirrors SP weight
   // Total: 32768
 ];
 

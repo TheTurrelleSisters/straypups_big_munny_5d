@@ -194,7 +194,7 @@ var REEL_SYMS={
 var BG={
   card:[],cardSerial:'',callSeq:[],cardNumSet:{},matchedCells:{},
   winPatterns:[],ballPos:0,entTimer:null,patternCycle:null,cycleIdx:0,
-  _coverAll1to40:false,usingServerBalls:false
+  _coverAll1to40:false,usingServerBalls:false,seqExhausted:false
 };
 var COL_RANGES=[[1,15],[16,30],[31,45],[46,60],[61,75]];
 
@@ -580,23 +580,12 @@ function _activeCallNext(){
     Progressive.updateBallPos(BG.ballPos);
   }
   if(BG.ballPos>=75){
-    // All 75 called — fetch new server sequence (or local fallback)
-    // New 40 balls populate strip instantly, no blank state
-    refreshServerBallCall(function(newSeq) {
-      BG.ballPos=40; // jump straight to ball 40 — all pre-called balls shown
-      if(BG.card){
-        // Re-evaluate which of the new 40 balls match the current card
-        BG.matchedCells={12:true};
-        for(var _nb=0;_nb<40;_nb++){
-          var _ball=BG.callSeq[_nb];
-          if(BG.cardNumSet[_ball]!==undefined) BG.matchedCells[BG.cardNumSet[_ball]]=true;
-        }
-        renderBingoCard(BG.card,BG.matchedCells,null);
-        renderBallStrip(BG.callSeq,40,BG.cardNumSet);
-      }
-      updateBallCallBadge();
-    });
-    return; // wait for callback before advancing
+    /* Sequence exhausted — stop caller and freeze until player spins.
+       Wide area: WABC broadcast keeps ticking; player re-syncs on next spin.
+       Local: genBallCall() runs on next spin press via doBingoSpin(). */
+    stopActiveCaller();
+    BG.seqExhausted=true;
+    return;
   }
   var newBall=BG.callSeq[BG.ballPos-1];
   // Daub card if ball matches
@@ -617,28 +606,16 @@ function _handleCoverAll(hasPenny){
   nameEl.textContent=hasPenny?'GAME END — COVER ALL $0.01':'GAME END — COVER ALL';
   nameEl.style.color='#ffcc00';
   if(hasPenny){S.bal+=0.01;updUI();}
-  /* BUG2 FIX: refreshServerBallCall writes new sequence to DB,
-     resets ball_pos=0, notifies ALL connected players via realtime.
-     Cover All ends the round for EVERYONE immediately. */
-  if(!S.spinning){ stopActiveCaller(); }
-  refreshServerBallCall(function(){
-    BG.ballPos=0;
-    updateBallCallBadge();
-    setTimeout(function(){
-      nameEl.textContent=' ';nameEl.style.color='';
-      if(BG.card){
-        BG.matchedCells={12:true};
-        for(var _cb=0;_cb<40;_cb++){
-          var _cball=BG.callSeq[_cb];
-          if(BG.cardNumSet[_cball]!==undefined)
-            BG.matchedCells[BG.cardNumSet[_cball]]=true;
-        }
-        renderBingoCard(BG.card,BG.matchedCells,null);
-        renderBallStrip(BG.callSeq,40,BG.cardNumSet);
-      }
-      if(!S.spinning){ startSilentCaller(); }
-    },2500);
-  });
+  /* v5.40: Stop caller and freeze — new sequence is picked up on next spin press.
+     Wide area: player re-syncs to WABC live position on spin.
+     Local: doBingoSpin() generates new sequence on spin press.
+     Do NOT fetch or generate a new sequence here. */
+  stopActiveCaller();
+  BG.seqExhausted=true;
+  updateBallCallBadge();
+  setTimeout(function(){
+    nameEl.textContent=' ';nameEl.style.color='';
+  },2500);
 }
 
 /* Legacy aliases so existing call sites don't break */
@@ -718,16 +695,28 @@ function doBingoSpin(){
   stopPatternCycle();
 
   // Preserve how many balls have been revealed so far.
-  // Only regenerate sequence if we haven't started or all 75 were exhausted.
   var prevBallPos=BG.ballPos||0;
-  /* BUG1 FIX: Never reset sequence on spin — sequence continues across spins.
-     Only reset if no sequence loaded at all (first load or corrupt state).
-     prevBallPos===0 alone is NOT a reason to regenerate — it just means
-     the entertainment phase hasn't started yet on this sequence. */
-  if(!BG.callSeq||BG.callSeq.length!==75){
-    /* No sequence at all — fall back to local */
-    BG.callSeq=genBallCall();
-    prevBallPos=0;
+
+  /* v5.40 sequence sync — two paths based on wide area vs local mode.
+     Wide area: ALWAYS re-sync from WABC on spin press so all players
+     see the exact same sequence. genBallCall() never called in wide area mode.
+     Local: only generate new sequence if exhausted or none loaded. */
+  if(BG.usingServerBalls && typeof WABC !== 'undefined') {
+    /* Wide area — re-sync to live WABC state */
+    var _wabcSeq = WABC.getSequence();
+    if(_wabcSeq && _wabcSeq.length === 75) {
+      BG.callSeq = _wabcSeq;
+      var _livePos = WABC.getBallPos();
+      prevBallPos = (_livePos > 40 ? _livePos : 40);
+    }
+    BG.seqExhausted = false;
+  } else {
+    /* Local mode — generate new sequence only if exhausted or none loaded */
+    if(BG.seqExhausted || !BG.callSeq || BG.callSeq.length !== 75){
+      BG.callSeq = genBallCall();
+      prevBallPos = 0;
+      BG.seqExhausted = false;
+    }
   }
 
   // Fresh card for this spin
@@ -832,8 +821,8 @@ function evalSpin(grid){
   if(L[0]===5||L[1]===5||L[2]===5) return{amt:1};
   // Gap on any reel with no cherry = safe non-win
   if(L[0]===6||L[1]===6||L[2]===6) return{amt:0};
-  // Any wild
-  if(L[0]===0||L[1]===0||L[2]===0) return{amt:1};
+  // Any wild (SP=0 or Progressive=7)
+  if(L[0]===0||L[0]===7||L[1]===0||L[1]===7||L[2]===0||L[2]===7) return{amt:1};
   // 3 of a kind
   if(L[0]===L[1]&&L[1]===L[2]) return{amt:1};
   // All 3 are bars in any mix
@@ -983,9 +972,9 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
 
   // Build spin strip: random symbols (mix of all ids including blanks) + final 3
   // Use 18 scroll symbols so phase 1 has plenty of tape flying through
-  var SPIN_SYM_IDS=[0,1,2,3,4,5,6];
+  var SPIN_SYM_IDS=[0,1,2,3,4,5,6,7];
   var spinSyms=[];
-  for(var i=0;i<18;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,6)]);
+  for(var i=0;i<18;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,7)]);
   spinSyms.push(finalGhost.above2);
   spinSyms.push(finalGhost.above);
   spinSyms.push(finalGhost.sym);
@@ -1284,21 +1273,28 @@ function renderHelp(){
   var b=document.getElementById('help-body');b.innerHTML='';
   var s1=document.createElement('div');s1.className='hsec';
   s1.innerHTML='<div class="hstl">HOW TO PLAY</div>'+
-    '<div class="hln">- <span>Class II Bingo machine</span> â€” bingo determines all outcomes</div>'+
+    '<div class="hln">- <span>Class II Bingo machine</span> - bingo determines all outcomes</div>'+
     '<div class="hln">- New bingo card generated every spin</div>'+
-    '<div class="hln">- First 40 balls determine win â€” rest are entertainment</div>'+
+    '<div class="hln">- First 40 balls determine win - rest are entertainment</div>'+
     '<div class="hln">- Multiple patterns trigger <span>Red Spin Bonus</span></div>'+
     '<div class="hln">- Any cherry on payline pays Open Diamond</div>';
   b.appendChild(s1);
   var s2=document.createElement('div');s2.className='hsec';
-  s2.innerHTML='<div class="hstl">TOP PATTERNS (BET 1)</div>'+
-    '<div class="hln"><span>Corporal Stripes</span> â€” $800 (JACKPOT)</div>'+
-    '<div class="hln"><span>Cross Corners</span> â€” $320</div>'+
-    '<div class="hln"><span>Pyramid / The Kite</span> â€” $160</div>'+
-    '<div class="hln"><span>Four Leaf Clover</span> â€” $100</div>'+
-    '<div class="hln"><span>Double Cross / Arrowhead</span> â€” $80</div>'+
-    '<div class="hln"><span>Valentine</span> â€” $50</div>';
+  s2.innerHTML='<div class="hstl">WILD SYMBOLS</div>'+
+    '<div class="hln"><span>SP (Stray Pup)</span> - Wild on all reels. Bingo pattern determines pay.</div>'+
+    '<div class="hln"><span>Progressive (Prog)</span> - Wild on all reels. Bingo pattern determines pay.</div>'+
+    '<div class="hln"><span>SP + Prog mix</span> - 2 of a kind visual. Bingo pattern determines pay.</div>'+
+    '<div class="hln"><span>Prog Prog Prog</span> - Wide Area Progressive Jackpot (Cover All in 25 balls)</div>';
   b.appendChild(s2);
+  var s3=document.createElement('div');s3.className='hsec';
+  s3.innerHTML='<div class="hstl">TOP PATTERNS (BET 1)</div>'+
+    '<div class="hln"><span>Corporal Stripes</span> - $800 (JACKPOT)</div>'+
+    '<div class="hln"><span>Cross Corners</span> - $320</div>'+
+    '<div class="hln"><span>Pyramid / The Kite</span> - $160</div>'+
+    '<div class="hln"><span>Four Leaf Clover</span> - $100</div>'+
+    '<div class="hln"><span>Double Cross / Arrowhead</span> - $80</div>'+
+    '<div class="hln"><span>Valentine</span> - $50</div>';
+  b.appendChild(s3);
 }
 
 /* â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -1443,19 +1439,123 @@ function initProgressiveMeter(){
       _setSplashConnStatus('⚠ Local mode — no wide area', '#ffaa00');
     }
     updateProgMeter(Progressive.getValue());
+
+    /* v5.40 — Wire WABC for ball call sequence.
+       WABC is independent of Progressive (WAP jackpot).
+       Progressive owns the pot; WABC owns the ball sequence. */
     _setSplashBallStatus('Fetching ball call…');
-    fetchServerBallCall(function() {
-      BG.ballPos = 0;
-      if (BG.usingServerBalls) {
-        _setSplashBallStatus('✔ Wide area ball call ready');
-      } else {
-        _setSplashBallStatus('⚠ Local ball call active');
-      }
-      if (!_ballNodes || _ballNodes.length < 75) buildBallStrip();
+    if(typeof WABC !== 'undefined') {
+      WABC.init(function() {
+        var _seq = WABC.getSequence();
+        if(_seq && _seq.length === 75) {
+          BG.callSeq = _seq;
+          BG.ballPos = 40;
+          BG.usingServerBalls = true;
+          BG.seqExhausted = false;
+          /* Daub first 40 balls against initial card if one exists */
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _ib=0;_ib<40;_ib++){
+              var _iball=BG.callSeq[_ib];
+              if(BG.cardNumSet[_iball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_iball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+          }
+          if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
+          renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          _setSplashBallStatus('✔ Wide area ball call ready');
+        } else {
+          /* WABC returned empty — fall back to local */
+          BG.callSeq = genBallCall();
+          BG.ballPos = 40;
+          BG.usingServerBalls = false;
+          BG.seqExhausted = false;
+          if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
+          renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          _setSplashBallStatus('⚠ Local ball call active');
+        }
+        updateBallCallBadge();
+
+        /* ── WABC event hooks ── registered once here, never re-registered */
+
+        /* Operator issued Reset — new sequence, all players fast-forward to 40 */
+        WABC.onNewCall(function(newSeq) {
+          if(!newSeq||newSeq.length!==75) return;
+          BG.callSeq = newSeq;
+          BG.ballPos = 40;
+          BG.usingServerBalls = true;
+          BG.seqExhausted = false;
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _nc=0;_nc<40;_nc++){
+              var _ncball=BG.callSeq[_nc];
+              if(BG.cardNumSet[_ncball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_ncball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+            renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          }
+          updateBallCallBadge();
+        });
+
+        /* Operator forced local — all players switch to local ball call */
+        WABC.onForceLocal(function() {
+          BG.callSeq = genBallCall();
+          BG.ballPos = 40;
+          BG.usingServerBalls = false;
+          BG.seqExhausted = false;
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _fl=0;_fl<40;_fl++){
+              var _flball=BG.callSeq[_fl];
+              if(BG.cardNumSet[_flball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_flball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+            renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          }
+          updateBallCallBadge();
+          toast('⚠ Switched to local ball call');
+        });
+
+        /* Operator restored wide area — re-sync all players to WABC sequence */
+        WABC.onRestoreWide(function(restoredSeq) {
+          if(!restoredSeq||restoredSeq.length!==75) return;
+          BG.callSeq = restoredSeq;
+          BG.ballPos = 40;
+          BG.usingServerBalls = true;
+          BG.seqExhausted = false;
+          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            for(var _rw=0;_rw<40;_rw++){
+              var _rwball=BG.callSeq[_rw];
+              if(BG.cardNumSet[_rwball]!==undefined)
+                BG.matchedCells[BG.cardNumSet[_rwball]]=true;
+            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
+            renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          }
+          updateBallCallBadge();
+          toast('✔ Wide area ball call restored');
+        });
+
+        /* WABC.onChange NOT wired — each player drives BG.ballPos locally */
+      });
+    } else {
+      /* WABC not loaded — fall back to local */
+      BG.callSeq = genBallCall();
+      BG.ballPos = 40;
+      BG.usingServerBalls = false;
+      BG.seqExhausted = false;
+      if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
+      renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+      _setSplashBallStatus('⚠ Local ball call active');
       updateBallCallBadge();
-    });
+    }
     setTimeout(function(){ sizeLayout(); }, 50);
   });
+
 }
 
 /* -- INIT -- */
