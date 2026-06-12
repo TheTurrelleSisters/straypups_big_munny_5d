@@ -189,3 +189,27 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
 - v5d: re-synced stale root game.js (was missing v5.60 sync code, unused
   duplicate — index.html loads from js/game.js, this was cosmetic cleanup)
 - Cache bust: spbm-v561
+
+### v5.62 — Cover All 40 / Cover All 75 Patterns Added
+- Added 2 missing patterns to BINGO_PATTERNS (config.js):
+  - 'Cover All 40' (balls:40, pay:[.01,.01,.01] all bets, reel:null)
+    Natural Cover All within pre-called zone (1-40) — awards $0.01, ends sequence
+  - 'Cover All 75' (balls:75, pay:[0,0,0], reel:null)
+    Natural Cover All in entertainment zone (1-75) — no pay, ends sequence
+- doBingoSpin()'s existing per-ball pattern loop picks these up automatically —
+  no special-casing needed. If Cover All 25 (Progressive) occurs, Cover All 40
+  and Cover All 75 both qualify too (25<=40<=75) -> all three stack/pay together
+  per bingo rules, full celebration plays
+- generateCoverAllSpin() winPatterns filter updated to include all 3 cover-all
+  patterns (was excluding Cover All 75 due to balls<=40 filter)
+- rsPatterns (Red Spin animation list) now excludes reel:null patterns —
+  Cover All 40/75 have no reel stops per design, but their pay (e.g. $0.01)
+  is still included via _allPatsBonus
+- Cache bust: spbm-v562
+
+### v5.63 — Cover All 40 Pay Always Credited
+- In the non-progressive win branch, Cover All 40's $0.01 (and Cover All 75's
+  $0, for symmetry) are now always added to baseAmt if present in winPatterns,
+  even when basePat is a different pattern. Previously only paid if it
+  happened to be winPatterns[0] (since reel:null excludes it from rsPatterns).
+- Cache bust: spbm-v563
