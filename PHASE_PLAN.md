@@ -213,3 +213,13 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
   even when basePat is a different pattern. Previously only paid if it
   happened to be winPatterns[0] (since reel:null excludes it from rsPatterns).
 - Cache bust: spbm-v563
+
+### v5.64 — Bug B: Cancel-Jackpot Reset
+- _subscribeCommands UPDATE handler now also handles status==='cancelled':
+  clears _forceArmed/_forceCommandId/_forceClaimed if matches this game's
+  armed command id, so it stops trying to claim a dead command.
+- _claimForceWin: when the won-update matches 0 rows (already claimed by
+  another player OR cancelled), also clears _forceArmed/_forceCommandId
+  (previously only _forceClaimed was reset, causing repeated retry attempts
+  on every future spin).
+- Cache bust: spbm-v564
