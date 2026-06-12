@@ -608,10 +608,16 @@ function stopSilentCaller(){
 function startActiveCaller(){
   stopActiveCaller();
   stopSilentCaller(); // active takes over from silent
-  BG.entTimer=setInterval(_activeCallNext,1500);
+  /* Ball call interval randomized 3.2-3.5s (was fixed 1.5s) — gives players
+     more time to see/react to each new ball. */
+  function _tick(){
+    _activeCallNext();
+    if(BG.entTimer!==null) BG.entTimer=setTimeout(_tick,rng.int(3200,3500));
+  }
+  BG.entTimer=setTimeout(_tick,rng.int(3200,3500));
 }
 function stopActiveCaller(){
-  if(BG.entTimer){clearInterval(BG.entTimer);BG.entTimer=null;}
+  if(BG.entTimer){clearTimeout(BG.entTimer);BG.entTimer=null;}
 }
 function _activeCallNext(){
   BG.ballPos=(BG.ballPos||0)+1;
@@ -1178,7 +1184,7 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   requestAnimationFrame(frame);
 }
 function animateReels(spinData,cb){
-  var STOP_DELAYS=[380,620,900];sndSpinStart();
+  var STOP_DELAYS=[600,1000,1450];sndSpinStart(); /* longer spin */
   for(var ri=0;ri<3;ri++) document.getElementById('r'+ri).classList.add('spinning');
   var done=0;
   function onReelStop(r){return function(){done++;if(done===3) setTimeout(cb,100);};}
@@ -1218,10 +1224,15 @@ function runRS(rsPatterns,cpl,onDone){
     }
     var pat=rsPatterns[seqIdx];seqIdx++;
     badge.textContent='RED SPIN '+seqIdx;
+    /* Show this pattern's name + highlight its cells on the bingo card
+       while its reel animation plays. */
+    var _pnEl=document.getElementById('bingo-pattern-name');
+    if(_pnEl) _pnEl.textContent=pat.name.toUpperCase();
+    renderBingoCard(BG.card,BG.matchedCells,pat.cells);
     var reelSyms=REEL_SYMS[pat.reel]||REEL_SYMS['none'];
     var sr=forcedSpinResult(reelSyms);
     sndBonusSpin();
-    var RS_STOP=[320,520,720];var rsDone=0;
+    var RS_STOP=[500,800,1150];var rsDone=0; /* longer spin */
     for(var ri3=0;ri3<3;ri3++){
       (function(rIdx){spinReel(rIdx,sr.ghosts[rIdx],RS_STOP[rIdx],function(){rsDone++;});})(ri3);
     }
@@ -1232,7 +1243,11 @@ function runRS(rsPatterns,cpl,onDone){
         redOv.classList.remove('on');badge.classList.remove('on');
         sndRedSpinEnd();
         setTimeout(function(){showJP(payAmt,function(){
-          bonusTotal+=payAmt;S.bal+=payAmt;updUI();onDone(bonusTotal);
+          bonusTotal+=payAmt;S.bal+=payAmt;updUI();
+          /* Small delay before continuing — keeps this celebration and
+             whatever comes next (e.g. Progressive finale) visually distinct,
+             and lets the dismiss-tap's event fully settle first. */
+          setTimeout(function(){onDone(bonusTotal);},300);
         });},500);return;
       }
       bonusTotal+=payAmt;S.bal+=payAmt;
@@ -1546,8 +1561,16 @@ function showProgJP(progAmt, winPatterns, cardSerial, balBefore) {
   }
   if (cel) cel.classList.add('show');
 
+  /* Guard against a residual tap/click from dismissing the PREVIOUS
+     overlay (e.g. the $800 Corporal Stripes JACKPOT popup) from
+     instantly dismissing THIS overlay too. Dismiss handlers attach
+     after a short delay so this celebration is actually seen. */
+  var _dismissReady=false;
+  setTimeout(function(){_dismissReady=true;},600);
+
   var dismissBtn = document.getElementById('fw-dismiss');
   function onDismiss() {
+    if (!_dismissReady) return; /* ignore residual tap from prior overlay */
     if (cel) cel.classList.remove('show');
     if (dismissBtn) dismissBtn.removeEventListener('click', onDismiss);
 

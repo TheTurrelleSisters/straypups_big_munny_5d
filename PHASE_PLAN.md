@@ -250,3 +250,27 @@ inside _finishProgressiveSpin).
 
 Applies to BOTH force jackpot and natural Cover-All-25 wins.
 Cache bust: spbm-v566
+
+### v5.67 — Progressive Celebration Dismiss-Collision Fix
+- When Corporal Stripes ($800, reel:'jp') is the last Red Spin pattern before
+  the Progressive finale, the player's tap-to-dismiss on the $800 JACKPOT
+  overlay was also instantly dismissing the Progressive overlay that appeared
+  right after (residual tap hit both full-screen tap-anywhere overlays).
+- Fixed: showProgJP's dismiss handlers now activate only after a 600ms guard
+  delay. Added a 300ms pause after the $800 JACKPOT overlay closes before
+  continuing to the Progressive finale, so the two celebrations are visually
+  distinct moments.
+- Confirmed: Red Spin reel symbols correctly escalate low->high (Open Diamond
+  cherry first, up through Corporal Stripes, then Progressive coverall) since
+  each pattern uses its own reel type via REEL_SYMS[pat.reel].
+- Cache bust: spbm-v567
+
+### v5.68 — Pacing & Card Highlight Improvements
+- Bingo card now highlights each pattern's winning cells AND shows its name
+  in the pattern-name display during Red Spin (was previously silent —
+  only the reels/payout updated, card stayed unchanged).
+- Entertainment ball-call interval changed from fixed 1.5s to randomized
+  3.2-3.5s (slower pace, more time to react to each ball).
+- Spin animation lengthened: main reel stop delays 380/620/900ms ->
+  600/1000/1450ms; Red Spin reel stop delays 320/520/720ms -> 500/800/1150ms.
+- Cache bust: spbm-v568
