@@ -1271,10 +1271,13 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         sndRedSpinEnd();
         setTimeout(function(){showJP(payAmt,function(){
           bonusTotal+=payAmt;S.bal+=payAmt;updUI();
-          /* Small delay before continuing — keeps this celebration and
-             whatever comes next (e.g. Progressive finale) visually distinct,
-             and lets the dismiss-tap's event fully settle first. */
-          setTimeout(function(){onDone(bonusTotal);},300);
+          /* Small delay before continuing to the NEXT pattern in the
+             sequence (e.g. Lazy-T finale) — keeps celebrations visually
+             distinct and lets the dismiss-tap's event fully settle first.
+             Was incorrectly calling onDone() here, ending the whole
+             sequence early and skipping any patterns after Corporal
+             Stripes (including the Progressive finale). */
+          setTimeout(function(){playNext();},300);
         });},500);return;
       }
       bonusTotal+=payAmt;S.bal+=payAmt;
@@ -1344,21 +1347,28 @@ function doSpin(){
       do{spinData=genSpinResult();attempts++;}
       while(evalSpin(buildGrid(spinData.syms,spinData.ghosts)).amt>0&&attempts<200);
     } else {
-      /* Sort non-progressive patterns ascending by pay.
-         Keep progressive pattern separate so it never sorts to position 0
-         (pay=[0,0,0] would make it basePat which breaks the flow). */
+      /* Sort reel-bearing, non-progressive patterns ascending by pay —
+         these drive the main spin + Red Spin sequence. Cover All 40/75
+         (reel:null, e.g. $0.01) are pulled out separately — they have NO
+         reel representation and must never become basePat (which would
+         show a no-win combo on the main reels) or appear in the Red Spin
+         sequence. They're appended at the end so _finishProgressiveSpin's
+         penny-toast scan still finds them. Progressive (Lazy-T) goes
+         absolute LAST so basePat is always the lowest reel-bearing pattern. */
       var _progInWins=false;
       var _nonProgPats=[];
+      var _sideAwards=[]; // reel:null, e.g. Cover All 40/75
       for(var _rpi=0;_rpi<winPatterns.length;_rpi++){
-        if(winPatterns[_rpi].isProgressive){_progInWins=true;}
-        else{_nonProgPats.push(winPatterns[_rpi]);}
+        var _wp=winPatterns[_rpi];
+        if(_wp.isProgressive){_progInWins=true;}
+        else if(!_wp.reel){_sideAwards.push(_wp);}
+        else{_nonProgPats.push(_wp);}
       }
       _nonProgPats.sort(function(a,b){return a.pay[0]-b.pay[0];});
-      /* Progressive goes LAST so basePat is always the lowest non-prog pattern */
       if(_progInWins){
-        winPatterns=_nonProgPats.concat(winPatterns.filter(function(p){return p.isProgressive;}));
+        winPatterns=_nonProgPats.concat(_sideAwards).concat(winPatterns.filter(function(p){return p.isProgressive;}));
       } else {
-        winPatterns=_nonProgPats;
+        winPatterns=_nonProgPats.concat(_sideAwards);
       }
       /* Always use the lowest pattern's reel for the MAIN spin — Progressive
          (reel:'coverall') is the LAST entry and plays during Red Spin as

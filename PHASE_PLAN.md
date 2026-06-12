@@ -310,3 +310,32 @@ Cache bust: spbm-v566
 - Renamed 'Progressive Jackpot' -> 'Lazy-T' throughout (game.js _forcePat
   objects, progressive.js fallback pattern names).
 - Cache bust: spbm-v570
+
+### v5.71 — CRITICAL: Lazy-T Finale Never Reached (2 Bugs Fixed)
+Root cause of "Lazy-T never awarded, sequence ended on Corporal Stripes,
+wrong celebration amount, pot didn't reset visually":
+
+Bug 1 — basePat selection: Cover All 40/75 (pay $0.01/$0, reel:null) were
+included in the ascending-pay sort and landed at winPatterns[0] (lowest
+pay), becoming basePat. Main reels then showed a no-win 'none' combo
+(REEL_SYMS[null] fallback) instead of Open Diamond.
+Fix: Cover All 40/75 are now pulled into a separate _sideAwards array,
+excluded from basePat/Red-Spin-sequence selection entirely, but still
+appended to winPatterns so the penny-toast scan in _finishProgressiveSpin
+still finds them.
+
+Bug 2 — runRS's Corporal Stripes ('jp' reel) branch called onDone()
+directly after its $800 celebration, ending the ENTIRE Red Spin sequence
+early. Since Lazy-T sorts after Corporal Stripes (appended last as the
+progressive finale), it never played — sequence stopped at Corporal
+Stripes, whose own "$800 JACKPOT" overlay was mistaken for the progressive
+celebration (wrong amount, pot never visually updated).
+Fix: 'jp' branch now calls playNext() to continue the sequence, so
+Lazy-T (or anything else after Corporal Stripes) still plays and
+showProgJP fires as the true finale.
+
+Correct order restored: Open Diamond (main reels) -> ... -> Corporal
+Stripes ($800 celebration) -> Lazy-T (Progressive finale, showProgJP) ->
+sequence ends. Cover All 40/75 awarded silently via penny-toast, unaffected
+by reel ordering.
+Cache bust: spbm-v571
