@@ -378,6 +378,10 @@ var Progressive = (function () {
         event: 'INSERT', schema: 'public', table: 'progressive_hits'
       }, function (p) {
         if (!p.new || _justWon) return;
+        /* Force jackpot wins are already announced via the
+           progressive_commands UPDATE handler above — skip here
+           to avoid showing the Attitude Check popup twice. */
+        if (p.new.pattern === 'Force Jackpot') return;
         var _hGameTitle = PROG_GAME_TITLES[p.new.game_id] || p.new.game_id || 'another game';
         for (var _hi=0; _hi<_onForceNotifyListeners.length; _hi++) {
           try { _onForceNotifyListeners[_hi](parseFloat(p.new.amount) || 0, _hGameTitle); } catch(e) {}

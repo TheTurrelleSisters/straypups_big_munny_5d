@@ -173,3 +173,19 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
   - If pos >= 40, joining player also starts their own active caller
 - wabc.js: added setPosProvider(), onSyncResponse(), sync_request/sync_response handlers
 - Cache bust: spbm-v560
+
+### v5.61 — Jackpot Card Redesign + Duplicate Notification Fix
+- generateCoverAllSpin() redesigned per Sasha's spec:
+  - Pool is now first 40 balls (pre-called zone), not first 25
+  - Picks 25 cells from this 40-ball pool respecting column constraints
+  - 40-ball pool guarantees enough numbers per column (avg 8 vs 4-5 needed)
+    -> eliminates the "not enough numbers" fallback bug from v5.56-v5.60
+  - ALL 25 cells guaranteed daubed (within pre-called zone = already called)
+  - BG.ballPos=40 (matches normal pre-called convention, was 25)
+  - Natural-feeling: looks like a real Cover All within the pre-called zone
+- Fixed duplicate "Attitude Check" popup for other players on force jackpot:
+  - progressive_hits INSERT handler now skips notify when pattern==='Force Jackpot'
+  - progressive_commands UPDATE handler already covers that case
+- v5d: re-synced stale root game.js (was missing v5.60 sync code, unused
+  duplicate — index.html loads from js/game.js, this was cosmetic cleanup)
+- Cache bust: spbm-v561

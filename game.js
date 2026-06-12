@@ -668,9 +668,13 @@ function stopEntertainmentBalls(){stopActiveCaller();}
 
 
 /* generateCoverAllSpin — called when force jackpot fires.
-   Builds a special bingo card using the first 25 balls from the current
-   WABC sequence so the jackpot uses the live wide-area ball call.
-   Column constraints respected: B=1-15, I=16-30, N=31-45, G=46-60, O=61-75.
+   Builds a special bingo card using 25 numbers drawn from the first 40
+   balls of the current WABC sequence (the pre-called zone). With 40
+   numbers to choose from there's always enough per column (avg 8 vs
+   4-5 needed), eliminating any "not enough numbers" fallback.
+   All 25 cells are within the pre-called zone, so per normal bingo
+   rules they're already-called — natural-feeling guaranteed Cover All.
+   Column constraints: B=1-15, I=16-30, N=31-45, G=46-60, O=61-75.
    Cell 12 (free space) always null and always pre-daubed.
    usingServerBalls stays true throughout — LIVE badge never changes.
    Returns array of winning patterns found within 25 balls. */
@@ -681,9 +685,9 @@ function generateCoverAllSpin(){
     seq = genBallCall();
   }
 
-  /* Build card from WABC sequence respecting column constraints.
-     For each column, scan through the sequence until we have 4 numbers
-     in the correct range (5 rows minus free space in col 2 row 2 = cell 12). */
+  /* Pool = first 40 balls (pre-called zone). Build card by picking from
+     this pool per column — guaranteed enough numbers per column. */
+  var pool = seq.slice(0, 40);
   var colRanges = COL_RANGES; /* [[1,15],[16,30],[31,45],[46,60],[61,75]] */
   var card = [];
   var used = {};
@@ -694,21 +698,19 @@ function generateCoverAllSpin(){
     var hi = colRanges[col][1];
     var needed = (col === 2) ? 4 : 5; /* N column has free space */
     var colNums = [];
-    /* First pass: pick from first 25 balls */
-    for (var si = 0; si < seq.length && colNums.length < needed; si++) {
-      var ball = seq[si];
+    for (var si = 0; si < pool.length && colNums.length < needed; si++) {
+      var ball = pool[si];
       if (ball >= lo && ball <= hi && !used[ball]) {
         colNums.push(ball);
         used[ball] = true;
       }
     }
-    /* If still short (rare), fill from column range not in sequence */
+    /* Extremely rare fallback: pool didn't have enough for this column */
     if (colNums.length < needed) {
       for (var n = lo; n <= hi && colNums.length < needed; n++) {
         if (!used[n]) { colNums.push(n); used[n] = true; }
       }
     }
-    /* Place in card column */
     var rowIdx = 0;
     for (var row = 0; row < 5; row++) {
       if (col === 2 && row === 2) {
@@ -735,42 +737,27 @@ function generateCoverAllSpin(){
     if (ordered[ci] !== null) BG.cardNumSet[ordered[ci]] = ci;
   }
 
-  /* Pre-daub ALL first 25 balls from WABC sequence (they all appear on card) */
-  BG.matchedCells = { 12: true }; /* free space always daubed */
-  for (var di = 0; di < 25; di++) {
-    var dball = seq[di];
-    if (BG.cardNumSet[dball] !== undefined) {
-      BG.matchedCells[BG.cardNumSet[dball]] = true;
-    }
-  }
+  /* Every card number was drawn from the first 40 balls, so ALL 25 cells
+     (24 numbers + free space) are guaranteed daubed — true Cover All. */
+  BG.matchedCells = {};
+  for (var mi = 0; mi < 25; mi++) BG.matchedCells[mi] = true;
 
-  /* Ball position: show 25 balls called */
+  /* Ball position: 40 — matches normal pre-called zone convention */
   BG.callSeq = seq; /* keep using existing WABC sequence */
-  BG.ballPos = 25;
-  /* usingServerBalls stays as-is — do NOT set to false */
+  BG.ballPos = 40;
+  /* usingServerBalls stays as-is — do NOT change */
   updateBallCallBadge();
 
   renderBingoCard(BG.card, BG.matchedCells, null);
   renderBallStrip(BG.callSeq, BG.ballPos, BG.cardNumSet);
 
-  /* Evaluate ALL patterns within 25 balls */
-  var wonPats = {};
+  /* Evaluate ALL patterns — since every cell is daubed, every pattern
+     with balls<=40 qualifies (Cover All pattern itself requires<=25). */
   var winPatterns = [];
-  for (var pb = 0; pb < 25; pb++) {
-    var pball = seq[pb];
-    var ballsCalledSoFar = pb + 1;
-    for (var pi = 0; pi < BINGO_PATTERNS.length; pi++) {
-      if (wonPats[pi]) continue;
-      var pat = BINGO_PATTERNS[pi];
-      if (ballsCalledSoFar > pat.balls) continue;
-      var complete = true;
-      for (var pc = 0; pc < pat.cells.length; pc++) {
-        var c = pat.cells[pc];
-        if (c === 12) continue; /* free space always daubed */
-        if (!BG.matchedCells[c]) { complete = false; break; }
-      }
-      if (complete) { wonPats[pi] = true; winPatterns.push(pat); }
-    }
+  for (var pi = 0; pi < BINGO_PATTERNS.length; pi++) {
+    var pat = BINGO_PATTERNS[pi];
+    if (pat.balls > 40) continue;
+    winPatterns.push(pat);
   }
 
   BG.winPatterns = winPatterns;
@@ -1717,6 +1704,35 @@ function initProgressiveMeter(){
         });
 
         /* WABC.onChange NOT wired — each player drives BG.ballPos locally */
+
+        /* Provide our current ball position to newly-joined players.
+           Only respond if WE are actively calling (entTimer running) —
+           silent/idle players don't answer sync requests. */
+        WABC.setPosProvider(function() {
+          return BG.entTimer ? BG.ballPos : null;
+        });
+
+        /* We just joined — another active player answered with the live
+           ball position. Fast-forward our card/strip to match instead of
+           sitting at ball 40. */
+        WABC.onSyncResponse(function(pos) {
+          if (!pos || pos <= BG.ballPos) return;
+          BG.ballPos = Math.min(pos, 75);
+          if (BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            var _capN = Math.min(BG.ballPos, BG.callSeq.length);
+            for (var _si=0; _si<_capN; _si++) {
+              var _sball = BG.callSeq[_si];
+              if (BG.cardNumSet[_sball] !== undefined) {
+                BG.matchedCells[BG.cardNumSet[_sball]] = true;
+              }
+            }
+            renderBingoCard(BG.card, BG.matchedCells, null);
+          }
+          renderBallStrip(BG.callSeq, BG.ballPos, BG.cardNumSet);
+          updateBallCallBadge();
+          if (BG.ballPos >= 40 && !BG.entTimer) startActiveCaller();
+        });
       });
     } else {
       /* WABC not loaded — fall back to local */
