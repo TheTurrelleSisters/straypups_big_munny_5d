@@ -49,6 +49,9 @@ var WABC = (function() {
   var _channel       = null;
   var _sequence      = [];
   var _ballPos       = 0;
+  var _posProvider   = null;  /* fn() -> current ball position if this player is actively calling */
+  var _syncResolved  = false; /* true once a sync_response has been applied */
+  var _syncListeners = [];
   var _issuedAt      = null;
   var _localMode     = false;
   var _changeListeners     = [];
@@ -84,6 +87,7 @@ var WABC = (function() {
   function _notifyNewCall()    { for (var i=0;i<_newCallListeners.length;i++)    { try{_newCallListeners[i](_sequence,_issuedAt);}catch(e){} } }
   function _notifyForceLocal() { for (var i=0;i<_forceLocalListeners.length;i++) { try{_forceLocalListeners[i]();}catch(e){} } }
   function _notifyRestore()    { for (var i=0;i<_restoreListeners.length;i++)    { try{_restoreListeners[i](_sequence,_issuedAt);}catch(e){} } }
+  function _notifySyncResponse(pos) { for (var i=0;i<_syncListeners.length;i++) { try{_syncListeners[i](pos);}catch(e){} } }
 
   /* ── INITIAL STATE FETCH ── */
   function _fetchInitial(cb) {
@@ -154,6 +158,33 @@ var WABC = (function() {
         _notifyNewCall();
         _notifyChange();
       })
+      .on('broadcast', { event: 'sync_request' }, function(msg) {
+        /* A newly-joined player is asking who's actively calling.
+           If WE are actively calling (BG.entTimer running via game.js),
+           respond with our current ball position so they can catch up. */
+        if (typeof _posProvider === 'function') {
+          var pos = _posProvider();
+          if (pos !== null && pos !== undefined && pos > 0 && _channel) {
+            _channel.send({
+              type: 'broadcast', event: 'sync_response',
+              payload: { pos: pos, seq_issued_at: _issuedAt }
+            });
+          }
+        }
+      })
+      .on('broadcast', { event: 'sync_response' }, function(msg) {
+        /* Another player answered our sync_request with their live position. */
+        if (!msg || !msg.payload || _syncResolved) return;
+        var p = msg.payload;
+        if (p.seq_issued_at && _issuedAt && p.seq_issued_at !== _issuedAt) return;
+        var pos = parseInt(p.pos, 10) || 0;
+        if (pos > _ballPos) {
+          _ballPos = pos;
+          _syncResolved = true;
+          _notifyChange();
+          _notifySyncResponse(pos);
+        }
+      })
       .on('broadcast', { event: 'reset_pos' }, function() {
         _ballPos = 0;
         _notifyChange();
@@ -207,6 +238,17 @@ var WABC = (function() {
         _subscribe();
         /* Expose channel so game can broadcast new_call on sequence exhaustion */
         window._wabcChannel = _channel;
+        /* Ask any actively-calling players for their current position so we
+           join mid-sequence instead of always starting at ball 40. Small
+           delay lets the channel finish subscribing first. */
+        setTimeout(function() {
+          if (_channel && !_syncResolved) {
+            _channel.send({
+              type: 'broadcast', event: 'sync_request',
+              payload: { seq_issued_at: _issuedAt }
+            });
+          }
+        }, 400);
         if (onReady) onReady();
       });
     });
@@ -221,6 +263,8 @@ var WABC = (function() {
   function onNewCall(fn)       { _newCallListeners.push(fn); }
   function onForceLocal(fn)    { _forceLocalListeners.push(fn); }
   function onRestoreWide(fn)   { _restoreListeners.push(fn); }
+  function onSyncResponse(fn)  { _syncListeners.push(fn); }
+  function setPosProvider(fn)  { _posProvider = fn; }
 
   return {
     init:          init,
@@ -231,7 +275,9 @@ var WABC = (function() {
     onChange:      onChange,
     onNewCall:     onNewCall,
     onForceLocal:  onForceLocal,
-    onRestoreWide: onRestoreWide
+    onRestoreWide: onRestoreWide,
+    onSyncResponse: onSyncResponse,
+    setPosProvider: setPosProvider
   };
 
 }());

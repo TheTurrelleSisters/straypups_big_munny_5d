@@ -345,7 +345,9 @@ var Progressive = (function () {
      removing ~2-3 DB writes/second that saturated the CDC replication pool. */
 
   function _subscribeCommands() {
-    _client.channel('prog-commands-' + _sessionKey.substr(0, 4))
+    /* Shared channel name — unique per-session channels exhausted the
+       Realtime CDC connection pool (PoolingReplicationPreparationError) */
+    _client.channel('prog-commands')
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'progressive_commands'
       }, function (p) {

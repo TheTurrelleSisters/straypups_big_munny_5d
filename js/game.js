@@ -1717,6 +1717,35 @@ function initProgressiveMeter(){
         });
 
         /* WABC.onChange NOT wired — each player drives BG.ballPos locally */
+
+        /* Provide our current ball position to newly-joined players.
+           Only respond if WE are actively calling (entTimer running) —
+           silent/idle players don't answer sync requests. */
+        WABC.setPosProvider(function() {
+          return BG.entTimer ? BG.ballPos : null;
+        });
+
+        /* We just joined — another active player answered with the live
+           ball position. Fast-forward our card/strip to match instead of
+           sitting at ball 40. */
+        WABC.onSyncResponse(function(pos) {
+          if (!pos || pos <= BG.ballPos) return;
+          BG.ballPos = Math.min(pos, 75);
+          if (BG.card && Object.keys(BG.cardNumSet).length > 0) {
+            BG.matchedCells = {12:true};
+            var _capN = Math.min(BG.ballPos, BG.callSeq.length);
+            for (var _si=0; _si<_capN; _si++) {
+              var _sball = BG.callSeq[_si];
+              if (BG.cardNumSet[_sball] !== undefined) {
+                BG.matchedCells[BG.cardNumSet[_sball]] = true;
+              }
+            }
+            renderBingoCard(BG.card, BG.matchedCells, null);
+          }
+          renderBallStrip(BG.callSeq, BG.ballPos, BG.cardNumSet);
+          updateBallCallBadge();
+          if (BG.ballPos >= 40 && !BG.entTimer) startActiveCaller();
+        });
       });
     } else {
       /* WABC not loaded — fall back to local */

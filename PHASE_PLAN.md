@@ -153,3 +153,23 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
 - Force jackpot card generation wrapped in try/catch with fallback (prevents lockup if generateCoverAllSpin throws)
 - Added 15s spin watchdog — force-unlocks game if spin never completes (DB hang, exception, etc.)
 - Cache bust: spbm-v558
+
+### v5.59 — CDC Connection Pool Exhaustion Fix
+- prog-commands-XXXX (unique per-session channel) caused
+  PoolingReplicationPreparationError: queue_timeout after 11+ seconds
+- Each test reload created a new CDC replication slot subscription,
+  exhausting the free tier's Realtime connection pool
+- Fixed: shared 'prog-commands' channel name for all sessions
+- Client-side filtering (winner_session !== _sessionKey) unchanged — still correct
+- Cache bust: spbm-v559
+
+### v5.60 — Mid-Sequence Join Sync (Ball Position)
+- Joining players always started at ball 40 regardless of live caller's actual position
+- ball_pos in DB is intentionally never updated (CDC pool protection from v5.39)
+- Fixed via broadcast handshake on wabc-ballpos channel (zero DB writes):
+  - New player sends 'sync_request' on join
+  - Actively-calling player (BG.entTimer running) responds with 'sync_response' { pos }
+  - New player fast-forwards card/strip/matchedCells to that position
+  - If pos >= 40, joining player also starts their own active caller
+- wabc.js: added setPosProvider(), onSyncResponse(), sync_request/sync_response handlers
+- Cache bust: spbm-v560
