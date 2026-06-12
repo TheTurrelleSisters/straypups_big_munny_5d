@@ -368,6 +368,14 @@ var Progressive = (function () {
             try { _onForceNotifyListeners[_wi](parseFloat(p.new.winner_amt) || 0, _wGameTitle); } catch(e) {}
           }
         }
+        /* Operator cancelled the armed jackpot before anyone claimed it —
+           clear local armed state so this game stops attempting to claim
+           a command that no longer exists. */
+        if (p.new.status === 'cancelled' && p.new.id === _forceCommandId) {
+          _forceArmed     = false;
+          _forceCommandId = null;
+          _forceClaimed   = false;
+        }
       })
       .subscribe();
   }
@@ -532,7 +540,12 @@ var Progressive = (function () {
       .then(function (res) {
         if (res.error || !res.data || !res.data.length) {
           clearTimeout(_safetyTimer);
-          _forceClaimed = false;
+          _forceClaimed   = false;
+          /* 0 rows matched: command was won by someone else or cancelled —
+             either way it's no longer claimable. Clear armed state so we
+             don't keep retrying this dead command every spin. */
+          _forceArmed     = false;
+          _forceCommandId = null;
           onClaimed(false);
           return;
         }
