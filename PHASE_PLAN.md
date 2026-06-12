@@ -223,3 +223,10 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
   (previously only _forceClaimed was reset, causing repeated retry attempts
   on every future spin).
 - Cache bust: spbm-v564
+
+### v5.65 — Splash Version Display Fix
+- <title> and #splash-ver were hardcoded at "v5.39" for 25 versions —
+  never updated despite cache-bust bumps. Now shows v5.65.
+- PERMANENT RULE ADDED: every future version bump must also update the
+  user-visible version display (splash/title), not just cache-busting.
+- Cache bust: spbm-v565
