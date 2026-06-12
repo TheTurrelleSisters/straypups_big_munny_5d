@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="StrayPups $5">
-<link rel="stylesheet" href="css/styles.css?v=5.57">
+<link rel="stylesheet" href="css/styles.css?v=5.58">
 </head>
 <body>
 <div id="asset-store">
@@ -142,12 +142,12 @@
     });
   }
 </script>
-<script src="js/progressive.js?v=5.57"></script>
+<script src="js/progressive.js?v=5.58"></script>
 <script src="wabc.js?v=1.2"></script>
-<script src="js/config.js?v=5.57"></script>
-<script src="js/game.js?v=5.57"></script>
-<script src="js/operator.js?v=5.57"></script>
-<script src="broadcast-init.js?v=5.57"></script>
+<script src="js/config.js?v=5.58"></script>
+<script src="js/game.js?v=5.58"></script>
+<script src="js/operator.js?v=5.58"></script>
+<script src="broadcast-init.js?v=5.58"></script>
 <!-- lobby-promo removed -->
 
 
@@ -156,8 +156,9 @@
   <div id="ac-top">&#9733; Gold Coins Casino &#9733;</div>
   <div id="ac-title">ATTITUDE CHECK!!!</div>
   <div id="ac-sub">Someone Just Won The Progressive Jackpot!</div>
-  <div id="ac-amt" id="ac-jackpot-amt">$0.00</div>
+  <div id="ac-jackpot-amt">$0.00</div>
   <div id="ac-sub">Progressive Jackpot!</div>
+  <div id="ac-game" style="font-size:11px;color:#ffd700;letter-spacing:1px;margin-top:4px"></div>
   <div id="ac-msg">Keep playing for your chance!!!</div>
   <button id="ac-dismiss" onclick="document.getElementById('attitude-check').classList.remove('show')">
     GOT IT &#128074;
@@ -195,7 +196,9 @@
   function showAttitudeCheck(amt, winnerGame) {
     var el    = document.getElementById('attitude-check');
     var amtEl = document.getElementById('ac-jackpot-amt');
+    var gameEl = document.getElementById('ac-game');
     if (amtEl) amtEl.textContent = '$' + (amt || 0).toFixed(2);
+    if (gameEl) gameEl.textContent = winnerGame ? ('Won on ' + winnerGame) : '';
     if (el) el.classList.add('show');
   }
 

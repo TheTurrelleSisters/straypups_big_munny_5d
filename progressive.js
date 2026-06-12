@@ -75,8 +75,8 @@ var Progressive = (function () {
   var _forceArmed        = false;
   var _forceCommandId    = null;
   var _forceClaimed      = false;
-  var _onForceWin        = null;
-  var _onForceNotify     = null;
+  var _onForceWinListeners = [];
+  var _onForceNotifyListeners = [];
   var _justWon           = false;
 
   /* ── Local fallback RNG (mirrors game.js RNG) ── */
@@ -361,8 +361,9 @@ var Progressive = (function () {
         if (p.new.status === 'won' && p.new.winner_session !== _sessionKey) {
           _forceArmed     = false;
           _forceCommandId = null;
-          if (_onForceNotify) {
-            _onForceNotify(parseFloat(p.new.winner_amt) || 0, p.new.winner_game || 'another game');
+          var _wGameTitle = PROG_GAME_TITLES[p.new.winner_game] || p.new.winner_game || 'another game';
+          for (var _wi=0; _wi<_onForceNotifyListeners.length; _wi++) {
+            try { _onForceNotifyListeners[_wi](parseFloat(p.new.winner_amt) || 0, _wGameTitle); } catch(e) {}
           }
         }
       })
@@ -375,8 +376,9 @@ var Progressive = (function () {
         event: 'INSERT', schema: 'public', table: 'progressive_hits'
       }, function (p) {
         if (!p.new || _justWon) return;
-        if (_onForceNotify) {
-          _onForceNotify(parseFloat(p.new.amount) || 0, p.new.game_id || 'another game');
+        var _hGameTitle = PROG_GAME_TITLES[p.new.game_id] || p.new.game_id || 'another game';
+        for (var _hi=0; _hi<_onForceNotifyListeners.length; _hi++) {
+          try { _onForceNotifyListeners[_hi](parseFloat(p.new.amount) || 0, _hGameTitle); } catch(e) {}
         }
       }).subscribe();
   }
@@ -830,8 +832,8 @@ var Progressive = (function () {
   function onChange(fn)         { _valueListeners.push(fn); fn(_localValue); }
   function onPresenceChange(fn) { _presenceListeners.push(fn); fn(_presenceCount); }
   function onMessage(fn)        { _messageListeners.push(fn); }
-  function onForceWin(fn)       { _onForceWin    = fn; }
-  function onForceNotify(fn)    { _onForceNotify = fn; }
+  function onForceWin(fn)       { if (typeof fn==='function') _onForceWinListeners.push(fn); }
+  function onForceNotify(fn)    { if (typeof fn==='function') _onForceNotifyListeners.push(fn); }
   function onBallCallUpdate(fn) { _ballCallListeners.push(fn); }
 
   return {

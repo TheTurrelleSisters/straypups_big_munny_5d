@@ -996,7 +996,8 @@ function _savePlayerState(){
 }
 var _ps=_loadPlayerState();
 var S={bal:_ps.bal,cpl:_ps.cpl,spinning:false,lastWin:0};
-var _spinDebounce=0; // timestamp of last spin completion — prevents rapid re-entry
+var _spinDebounce=0;
+var _spinWatchdog=null; // timestamp of last spin completion — prevents rapid re-entry
 var SLOT_H=120;
 var _reelWinH=0; // cached reel-window clientHeight — set in initReelSlots
 var CURRENT_SYMS=[5,4,1];
@@ -1262,6 +1263,17 @@ function doSpin(){
   if(S.bal<S.cpl*DENOM){toast('INSERT CASH TO PLAY');return;}
   if(_reelWinH===0) initReelSlots();
   S.spinning=true;S.bal-=S.cpl*DENOM;
+  /* Watchdog: if spin doesn't complete within 15s (DB hang, exception, etc.)
+     force-unlock the game so the player can continue. */
+  if(_spinWatchdog) clearTimeout(_spinWatchdog);
+  _spinWatchdog=setTimeout(function(){
+    if(S.spinning){
+      console.warn('[Watchdog] Spin stuck >15s — force unlocking');
+      S.spinning=false; setCtrl(true); updUI();
+      var cel=document.getElementById('force-win-cel');
+      if(cel) cel.classList.remove('show');
+    }
+  },15000);
   var _forceJP=false;
   if(typeof Progressive!=='undefined'){
     _forceJP=Progressive.contribute(S.cpl*DENOM);
@@ -1323,7 +1335,7 @@ function doSpin(){
       if(winPatterns.length===0){
         setWin(0,'NO BINGO');
         opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:0,patterns:[],balBefore:_spinBalBefore,balAfter:S.bal});
-        _spinDebounce=Date.now();S.spinning=false;setCtrl(true);updUI();return;
+        _spinDebounce=Date.now();(function(){if(_spinWatchdog){clearTimeout(_spinWatchdog);_spinWatchdog=null;}})();S.spinning=false;setCtrl(true);updUI();return;
       }
 
       if(BG._coverAll1to40){BG._coverAll1to40=false;_handleCoverAll(true);}
@@ -1385,30 +1397,43 @@ function doSpin(){
             document.getElementById('bt-box').classList.remove('on');
             startPatternCycle(winPatterns);
             opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt+bonusTotal,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
-            _spinDebounce=Date.now();updUI();S.spinning=false;setCtrl(true);
+            _spinDebounce=Date.now();updUI();(function(){if(_spinWatchdog){clearTimeout(_spinWatchdog);_spinWatchdog=null;}})();S.spinning=false;setCtrl(true);
           });
         },600);return;
       }
       startPatternCycle(winPatterns);
       opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
-      _spinDebounce=Date.now();S.spinning=false;setCtrl(true);updUI();
+      _spinDebounce=Date.now();(function(){if(_spinWatchdog){clearTimeout(_spinWatchdog);_spinWatchdog=null;}})();S.spinning=false;setCtrl(true);updUI();
     });
   } // end _continueSpinAfterClaim
 
   // Force jackpot: claim async, THEN generate guaranteed Cover All + run spin
   if(_forceJP&&typeof Progressive!=='undefined'){
     Progressive.claimForce(function(didWin,forceAmt){
-      if(didWin){
-        // Override the random card with a guaranteed Cover All card + matching ball call
-        var coverAllPatterns=generateCoverAllSpin();
-        /* usingServerBalls preserved inside generateCoverAllSpin — no restore needed */
-        var _forcePat={
-          name:'Progressive Jackpot',balls:25,pay:[0,0,0],
-          reel:'coverall',cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
-          isProgressive:true,_forceAmt:forceAmt
-        };
-        // winPatterns = force pattern + all Cover All qualifying patterns
-        winPatterns=[_forcePat].concat(coverAllPatterns.filter(function(p){return !p.isProgressive;}));
+      try {
+        if(didWin){
+          // Override the random card with a guaranteed Cover All card + matching ball call
+          var coverAllPatterns=generateCoverAllSpin();
+          /* usingServerBalls preserved inside generateCoverAllSpin — no restore needed */
+          var _forcePat={
+            name:'Progressive Jackpot',balls:25,pay:[0,0,0],
+            reel:'coverall',cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
+            isProgressive:true,_forceAmt:forceAmt
+          };
+          // winPatterns = force pattern + all Cover All qualifying patterns
+          winPatterns=[_forcePat].concat(coverAllPatterns.filter(function(p){return !p.isProgressive;}));
+        }
+      } catch(e) {
+        console.error('[ForceJP] generateCoverAllSpin failed:', e);
+        /* Fall back: pay the force amount as a plain progressive hit with no extra patterns */
+        if (didWin) {
+          var _forcePatFallback={
+            name:'Progressive Jackpot',balls:25,pay:[0,0,0],
+            reel:'coverall',cells:[],
+            isProgressive:true,_forceAmt:forceAmt
+          };
+          winPatterns=[_forcePatFallback];
+        }
       }
       _continueSpinAfterClaim(); // ALWAYS called — no lockup possible
     });

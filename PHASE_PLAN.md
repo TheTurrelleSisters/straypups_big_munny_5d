@@ -137,3 +137,19 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
 - Cover All triggers _requestNewWABCSequence for fresh sequence
 - Removed unnecessary usingServerBalls save/restore
 - Cache bust: spbm-v556
+
+### v5.57 — CRITICAL: Legacy JWT Anon Key Fix
+- sb_publishable_ key silently ignored by Supabase Realtime WebSocket server
+- This broke ALL Realtime features: presence, broadcast, postgres_changes
+- Symptoms: 0 players in operator, WABC not connecting, jackpot not detected
+- Fixed: replaced sb_publishable_ with legacy eyJ... JWT anon key everywhere
+- Cache bust: spbm-v557
+
+### v5.58 — Force Jackpot Toast/Lockup/Notify Fixes
+- onForceNotify/onForceWin converted to multi-listener arrays (were single-callback, getting overwritten)
+- winner_game now mapped through PROG_GAME_TITLES (was showing raw game_id like 'straypups_1d')
+- Fixed duplicate id="ac-amt"/"ac-jackpot-amt" on attitude-check overlay
+- Added ac-game element showing which game won
+- Force jackpot card generation wrapped in try/catch with fallback (prevents lockup if generateCoverAllSpin throws)
+- Added 15s spin watchdog — force-unlocks game if spin never completes (DB hang, exception, etc.)
+- Cache bust: spbm-v558
