@@ -230,3 +230,23 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
 - PERMANENT RULE ADDED: every future version bump must also update the
   user-visible version display (splash/title), not just cache-busting.
 - Cache bust: spbm-v565
+
+### v5.66 — Progressive Jackpot Sequential Award Flow (Major Restructure)
+Per Sasha's spec, the Cover-All-25 award sequence is now correctly ordered:
+  1. Cover All 40 ($0.01) — instant toast + penny credited immediately
+  2. All other winning patterns (balls<=40), sorted LOWEST pay -> HIGHEST,
+     daubed/awarded via Red Spin reel-stacking animation (runRS)
+  3. Progressive Jackpot — grand finale celebration (showProgJP)
+  4. After celebration dismissed: full-card daub, win logged, sequence ends
+     (stopActiveCaller + _requestNewWABCSequence) per Cover-All bingo rule
+
+New function _finishProgressiveSpin() implements steps 1-3 and calls the
+rewritten showProgJP() (now finale-only, handles step 4 on dismiss).
+Previously showProgJP ran FIRST (celebration before other patterns) and
+the ball sequence never ended after a progressive win — both fixed.
+
+_allPatsBonus no longer double-counts Cover All 40 (now handled solely
+inside _finishProgressiveSpin).
+
+Applies to BOTH force jackpot and natural Cover-All-25 wins.
+Cache bust: spbm-v566

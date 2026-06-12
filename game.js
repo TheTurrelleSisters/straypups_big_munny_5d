@@ -1351,25 +1351,25 @@ function doSpin(){
            _allPatsBonus is the total of all non-progressive winners. */
         var _allPatsBonus=0;
         for(var _api=0;_api<winPatterns.length;_api++){
-          if(!winPatterns[_api].isProgressive){
+          /* Cover All 40/75 (reel:null) are awarded separately inside
+             _finishProgressiveSpin (penny toast) — exclude here to avoid
+             double-counting. */
+          if(!winPatterns[_api].isProgressive && winPatterns[_api].reel){
             _allPatsBonus+=winPatterns[_api].pay[S.cpl-1]*_denom;
           }
         }
         if(_progPat._forceAmt){
           // Force win — amount confirmed by DB claim, no hit() RPC needed
-          var _totalForceAmt=_progPat._forceAmt+_allPatsBonus;
-          S.bal+=_totalForceAmt;S.lastWin=_totalForceAmt;updUI();
-          showProgJP(_totalForceAmt,basePat,rsPatterns,winPatterns,S.cpl,0,_spinCardSerial,_spinBalBefore);
+          _finishProgressiveSpin(_progPat._forceAmt+_allPatsBonus, winPatterns,
+                                  basePat, _spinCardSerial, _spinBalBefore);
         } else {
           /* Natural Cover All — arm in DB then claim atomically.
              Player 1 gets full pot, Player 2 gets seed amount.
-             Both pay via showProgJP() — same celebration, different amounts.
+             Both pay via the same sequential award flow + celebration.
              Progressive.hit() never called — DB is sole payment authority. */
           Progressive.armAndClaim(function(didWin, _progAmt) {
-            var _totalProgAmt = _progAmt + _allPatsBonus;
-            S.bal += _totalProgAmt; S.lastWin = _totalProgAmt; updUI();
-            showProgJP(_totalProgAmt, basePat, rsPatterns, winPatterns,
-                       S.cpl, 0, _spinCardSerial, _spinBalBefore);
+            _finishProgressiveSpin(_progAmt+_allPatsBonus, winPatterns,
+                                    basePat, _spinCardSerial, _spinBalBefore);
           });
         }
         return;
@@ -1482,7 +1482,52 @@ function renderHelp(){
    Used for BOTH natural bingo wins AND force jackpot wins.
    Shows the video celebration overlay, NOT the old jp-ov text screen.
    ────────────────────────────────────────────────────────────────────── */
-function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, cardSerial, balBefore) {
+/* _finishProgressiveSpin — runs the FULL Cover-All award sequence per
+   bingo rules:
+     1. Cover All 40 ($0.01, reel:null) — instant toast + penny credited
+     2. All other winning patterns, LOWEST pay -> HIGHEST, via Red Spin
+        reel-stacking animation (runRS)
+     3. Progressive Jackpot — grand finale celebration (showProgJP)
+     4. After celebration dismissed: full card daub, sequence ends
+        (Cover All occurred -> stopActiveCaller + request new WABC sequence)
+   Called for BOTH force jackpot and natural Cover-All-25 wins. */
+function _finishProgressiveSpin(progAmt, winPatterns, basePat, cardSerial, balBefore) {
+  var _denom=(typeof DENOM!=='undefined'?DENOM:1);
+
+  /* Step 1: Cover All 40 — instant toast + penny, not part of Red Spin */
+  var pennyAmt=0;
+  for(var _c40=0;_c40<winPatterns.length;_c40++){
+    if(winPatterns[_c40].name==='Cover All 40'){
+      pennyAmt=winPatterns[_c40].pay[S.cpl-1]*_denom;
+      S.bal+=pennyAmt;S.lastWin=pennyAmt;updUI();
+      toast('+'+fmtMoney(pennyAmt)+'  Cover All 40!');
+      break;
+    }
+  }
+
+  /* Step 2: all other non-progressive, reel-bearing patterns,
+     sorted LOWEST pay -> HIGHEST pay, via Red Spin */
+  var rsPatterns=winPatterns.filter(function(p){return !p.isProgressive && p.reel;});
+  rsPatterns.sort(function(a,b){return a.pay[S.cpl-1]-b.pay[S.cpl-1];});
+
+  startPatternCycle([basePat]);
+  setTimeout(function(){
+    stopPatternCycle();
+    runRS(rsPatterns,S.cpl,function(bonusTotal){
+      document.getElementById('bt-box').classList.remove('on');
+      /* Step 3: Progressive Jackpot grand finale */
+      var totalAmt=pennyAmt+bonusTotal+progAmt;
+      S.bal+=bonusTotal+progAmt;S.lastWin=totalAmt;updUI();
+      showProgJP(totalAmt,winPatterns,cardSerial,balBefore);
+    });
+  },600);
+}
+
+/* showProgJP — Progressive Jackpot grand-finale celebration overlay.
+   Called AFTER all other winning patterns have already been daubed/awarded
+   via _finishProgressiveSpin. On dismiss: full-card daub, log, and end the
+   ball sequence (Cover All occurred per bingo rules). */
+function showProgJP(progAmt, winPatterns, cardSerial, balBefore) {
   var CEL_VIDS = [
     'assets/videos/josie_dance.mp4',
     'assets/videos/sasha_dance.mp4',
@@ -1501,54 +1546,44 @@ function showProgJP(progAmt, basePat, rsPatterns, winPatterns, cpl, baseAmt, car
   }
   if (cel) cel.classList.add('show');
 
-  /* Wire dismiss to continue the spin */
   var dismissBtn = document.getElementById('fw-dismiss');
   function onDismiss() {
     if (cel) cel.classList.remove('show');
     if (dismissBtn) dismissBtn.removeEventListener('click', onDismiss);
-    /* Continue spin resolution */
-    if (rsPatterns && rsPatterns.length > 0) {
-      startPatternCycle([basePat]);
-      setTimeout(function () {
-        stopPatternCycle();
-        runRS(rsPatterns, cpl, function (bonusTotal) {
-          setWin(baseAmt + bonusTotal + (S.lastWin - baseAmt), 'PROGRESSIVE JACKPOT!');
-          document.getElementById('bt-box').classList.remove('on');
-          startPatternCycle(winPatterns);
-          opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
-            bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-            win:S.lastWin, balls:25,
-            isProgressive:true, progAmount:S.lastWin,
-            patterns:winPatterns.map(function(p){return p.name;}),
-            balBefore:balBefore, balAfter:S.bal});
-          _spinDebounce = Date.now(); updUI(); S.spinning = false; setCtrl(true);
-        });
-      }, 600);
-    } else {
-      /* Highlight ALL winning pattern cells on bingo card after dismiss */
-      var _allWinCells = {};
-      for (var _wci = 0; _wci < winPatterns.length; _wci++) {
-        for (var _wcc = 0; _wcc < winPatterns[_wci].cells.length; _wcc++) {
-          _allWinCells[winPatterns[_wci].cells[_wcc]] = true;
-        }
+
+    /* Full-card daub — Cover All means every cell is part of the win */
+    var _allWinCells = {};
+    for (var _wci = 0; _wci < winPatterns.length; _wci++) {
+      for (var _wcc = 0; _wcc < winPatterns[_wci].cells.length; _wcc++) {
+        _allWinCells[winPatterns[_wci].cells[_wcc]] = true;
       }
-      var _allCellArr = Object.keys(_allWinCells).map(Number);
-      renderBingoCard(BG.card, BG.matchedCells, _allCellArr);
-      startPatternCycle(winPatterns);
-      opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
-        bet:cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
-        win:S.lastWin, balls:25,
-        isProgressive:true, progAmount:S.lastWin,
-        patterns:winPatterns.map(function(p){return p.name;}),
-        balBefore:balBefore, balAfter:S.bal});
-      _spinDebounce = Date.now(); S.spinning = false; setCtrl(true); updUI();
     }
+    var _allCellArr = Object.keys(_allWinCells).map(Number);
+    renderBingoCard(BG.card, BG.matchedCells, _allCellArr);
+    startPatternCycle(winPatterns);
+
+    opLog({type:'SPIN', gameSerial:genGameSerial(), cardSerial:cardSerial,
+      bet:S.cpl * (typeof DENOM !== 'undefined' ? DENOM : 1),
+      win:S.lastWin, balls:25,
+      isProgressive:true, progAmount:S.lastWin,
+      patterns:winPatterns.map(function(p){return p.name;}),
+      balBefore:balBefore, balAfter:S.bal});
+
+    /* Cover All occurred -> sequence ends per bingo rules.
+       Request a fresh WABC sequence for all players. */
+    stopActiveCaller();
+    BG.seqExhausted=true;
+    updateBallCallBadge();
+    _requestNewWABCSequence();
+
+    _spinDebounce = Date.now();
+    (function(){if(_spinWatchdog){clearTimeout(_spinWatchdog);_spinWatchdog=null;}})();
+    S.spinning = false; setCtrl(true); updUI();
   }
   if (dismissBtn) {
     dismissBtn.removeEventListener('click', onDismiss);
     dismissBtn.addEventListener('click', onDismiss);
   }
-  /* Also allow tapping the overlay to dismiss */
   if (cel) {
     cel.onclick = function(e) {
       if (e.target === cel) onDismiss();
