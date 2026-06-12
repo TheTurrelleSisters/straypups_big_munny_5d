@@ -59,11 +59,11 @@ var VSTOP_TABLE = [
 
 var STRIPS = [
   // Reel 1 — 100 stops: sym/gap interleaved. Even indices=sym, odd=gap.
-  [4,6,5,6,4,6,2,6,1,6,2,6,5,6,2,6,3,6,4,6,2,6,5,6,3,6,0,6,5,6,2,6,2,6,4,6,5,6,0,6,3,6,4,6,4,6,2,6,3,6,3,6,2,6,5,6,5,6,1,6,3,6,4,6,4,6,5,6,3,6,4,6,4,6,0,6,5,6,4,6,1,6,0,6,1,6,2,6,3,6,3,6,4,6,0,6,1,6,3,6],
+  [0,6,1,6,0,6,7,6,1,6,4,6,3,6,5,6,4,6,5,6,4,6,3,6,2,6,2,6,2,6,2,6,1,6,5,6,7,6,3,6,5,6,5,6,0,6,5,6,7,6,7,6,3,6,4,6,0,6,7,6,0,6,5,6,1,6,4,6,0,6,0,6,1,6,4,6,1,6,3,6,7,6,7,6,2,6,1,6,2,6,4,6,3,6,2,6,3,6,0,6],
   // Reel 2 — 100 stops: sym/gap interleaved.
-  [2,6,4,6,3,6,4,6,1,6,0,6,5,6,4,6,0,6,3,6,3,6,5,6,2,6,0,6,5,6,4,6,3,6,4,6,2,6,3,6,3,6,1,6,5,6,1,6,4,6,3,6,1,6,5,6,4,6,2,6,4,6,2,6,5,6,4,6,2,6,3,6,2,6,4,6,0,6,2,6,4,6,0,6,5,6,4,6,3,6,3,6,5,6,5,6,2,6,1,6],
+  [1,6,1,6,5,6,5,6,0,6,2,6,5,6,3,6,3,6,7,6,7,6,7,6,3,6,0,6,5,6,1,6,2,6,1,6,5,6,2,6,2,6,7,6,4,6,7,6,4,6,0,6,3,6,1,6,4,6,3,6,7,6,0,6,4,6,4,6,2,6,3,6,2,6,5,6,1,6,0,6,5,6,3,6,4,6,0,6,0,6,2,6,0,6,4,6,7,6,1,6],
   // Reel 3 — 100 stops: sym/gap interleaved.
-  [5,6,3,6,4,6,4,6,0,6,3,6,5,6,3,6,3,6,2,6,0,6,3,6,3,6,3,6,4,6,5,6,5,6,0,6,3,6,4,6,4,6,4,6,2,6,2,6,0,6,3,6,5,6,4,6,4,6,2,6,2,6,1,6,2,6,2,6,1,6,0,6,1,6,4,6,1,6,1,6,4,6,4,6,3,6,5,6,2,6,4,6,5,6,5,6,2,6,5,6]
+  [2,6,0,6,5,6,0,6,2,6,3,6,5,6,0,6,2,6,2,6,7,6,1,6,7,6,0,6,3,6,7,6,2,6,7,6,1,6,3,6,4,6,1,6,5,6,0,6,5,6,3,6,2,6,5,6,7,6,1,6,4,6,0,6,4,6,7,6,1,6,1,6,1,6,3,6,3,6,5,6,4,6,0,6,4,6,0,6,3,6,7,6,4,6,5,6,2,6,4,6]
 ];/* ── 4. BINGO PATTERNS ───────────────────────────────────────────────────────
    Each pattern:
      name  : display name
@@ -154,8 +154,13 @@ var BINGO_PATTERNS = [
   // Awards progressive pot PLUS sum of ALL other pattern payouts stacked.
   // Reel shows new StrayPup Progressive symbol (coverall).
   // Do NOT change balls threshold without owner approval.
-  {name:'Progressive Jackpot', balls:25, pay:[0,0,0],     reel:'coverall',
-   cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], isProgressive:true},
+  // Lazy-T: O column (4,9,14,19,24) + N/middle row (10,11,12,13,14) = 9 cells.
+  // Symbol 7-7-7 (Progressive mascot) on reels. Bonanza Bingo rules: this is
+  // the dedicated Progressive trigger pattern, distinct from Cover All 40/75
+  // (which require ALL 25 cells). A Cover-All-25 card satisfies Lazy-T too
+  // (its 9 cells are a subset of all-25), so it stacks naturally.
+  {name:'Lazy-T', balls:25, pay:[0,0,0],     reel:'coverall',
+   cells:[4,9,10,11,12,13,14,19,24], isProgressive:true},
 
   // ── COVER ALL — SEQUENCE-ENDING RULES ───────────────────────────────────
   // These are not slot-reel wins (reel:null = no reel stops). They represent

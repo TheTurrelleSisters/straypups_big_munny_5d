@@ -669,7 +669,7 @@ var Progressive = (function () {
 
     var patternNames = (info && info.patterns)
       ? info.patterns.join(', ')
-      : ((info && info.pattern) ? info.pattern : 'Progressive Jackpot');
+      : ((info && info.pattern) ? info.pattern : 'Lazy-T');
 
     if (!_connected || !_client) {
       if (onDone) onDone(hitAmt);
@@ -680,7 +680,7 @@ var Progressive = (function () {
       game_id:        PROG_GAME_ID,
       denom:          PROG_DENOM,
       amount:         hitAmt,
-      pattern:        (info && info.pattern) ? info.pattern : 'Progressive Jackpot',
+      pattern:        (info && info.pattern) ? info.pattern : 'Lazy-T',
       balls:          (info && info.balls)   ? info.balls   : 0,
       bet:            (info && info.bet)     ? info.bet     : 0,
       player_session: _sessionKey,

@@ -911,6 +911,15 @@ function forcedSpinResult(syms){
   // each spin (e.g. Hopscotch shows SP/Cherry/1Bar OR Cherry/SP/1Bar OR 1Bar/SP/Cherry etc.)
   // Uses Fisher-Yates with the game CSPRNG so it's unpredictable.
   var shuffled=syms.slice();
+  /* Progressive (7) is a wild that substitutes for Scott (0) on normal
+     pattern wins — random per-spin, shuffled. Lazy-T's fixed 7-7-7 combo
+     (syms all === 7) is left untouched — that's the dedicated jackpot
+     trigger, not a substitution. */
+  if(!(shuffled[0]===7&&shuffled[1]===7&&shuffled[2]===7)){
+    for(var _wi=0;_wi<shuffled.length;_wi++){
+      if(shuffled[_wi]===0&&rng.pct(0.5)) shuffled[_wi]=7;
+    }
+  }
   for(var i=shuffled.length-1;i>0;i--){
     var j=rng.int(0,i);
     var tmp=shuffled[i];shuffled[i]=shuffled[j];shuffled[j]=tmp;
@@ -1202,7 +1211,7 @@ function showJP(jpAmt,cb){
 }
 
 /* â”€â”€ RED SPIN (bingo-driven) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function runRS(rsPatterns,cpl,onDone){
+function runRS(rsPatterns,cpl,onDone,progCtx){
   if(!rsPatterns||rsPatterns.length===0){onDone(0);return;}
   var frame2=document.getElementById('reel-frame');
   var redOv=document.getElementById('red-ov');
@@ -1238,6 +1247,24 @@ function runRS(rsPatterns,cpl,onDone){
     }
     setTimeout(function(){
       var payAmt=pat.pay[cpl-1]*DENOM;
+      if(pat.isProgressive&&progCtx){
+        /* Progressive Jackpot — grand finale. Reels already show 'coverall'
+           symbols (just landed). Add accumulated bonusTotal + jackpot amount,
+           then hand off to showProgJP. This ends the sequence — no further
+           playNext/onDone call. */
+        frame2.classList.remove('bonus-active');
+        redOv.classList.remove('on');badge.classList.remove('on');
+        btBox.classList.remove('on');
+        sndRedSpinEnd();
+        /* bonusTotal was already added to S.bal incrementally as each
+           prior pattern played — only add the jackpot amount here. */
+        var _totalAmt=progCtx.pennyAmt+bonusTotal+progCtx.amt;
+        S.bal+=progCtx.amt;S.lastWin=_totalAmt;updUI();
+        setTimeout(function(){
+          showProgJP(_totalAmt,progCtx.winPatterns,progCtx.cardSerial,progCtx.balBefore);
+        },500);
+        return;
+      }
       if(pat.reel==='jp'){
         frame2.classList.remove('bonus-active');
         redOv.classList.remove('on');badge.classList.remove('on');
@@ -1333,9 +1360,10 @@ function doSpin(){
       } else {
         winPatterns=_nonProgPats;
       }
-      spinData=_progInWins
-        ?forcedSpinResult(REEL_SYMS['coverall'])
-        :forcedSpinResult(REEL_SYMS[winPatterns[0].reel]||REEL_SYMS['none']);
+      /* Always use the lowest pattern's reel for the MAIN spin — Progressive
+         (reel:'coverall') is the LAST entry and plays during Red Spin as
+         the grand finale, not on the main reels. */
+      spinData=forcedSpinResult(REEL_SYMS[winPatterns[0].reel]||REEL_SYMS['none']);
     }
 
     animateReels(spinData,function(){
@@ -1435,8 +1463,8 @@ function doSpin(){
           var coverAllPatterns=generateCoverAllSpin();
           /* usingServerBalls preserved inside generateCoverAllSpin — no restore needed */
           var _forcePat={
-            name:'Progressive Jackpot',balls:25,pay:[0,0,0],
-            reel:'coverall',cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
+            name:'Lazy-T',balls:25,pay:[0,0,0],
+            reel:'coverall',cells:[4,9,10,11,12,13,14,19,24],
             isProgressive:true,_forceAmt:forceAmt
           };
           // winPatterns = force pattern + all Cover All qualifying patterns
@@ -1447,8 +1475,8 @@ function doSpin(){
         /* Fall back: pay the force amount as a plain progressive hit with no extra patterns */
         if (didWin) {
           var _forcePatFallback={
-            name:'Progressive Jackpot',balls:25,pay:[0,0,0],
-            reel:'coverall',cells:[],
+            name:'Lazy-T',balls:25,pay:[0,0,0],
+            reel:'coverall',cells:[4,9,10,11,12,13,14,19,24],
             isProgressive:true,_forceAmt:forceAmt
           };
           winPatterns=[_forcePatFallback];
@@ -1520,21 +1548,27 @@ function _finishProgressiveSpin(progAmt, winPatterns, basePat, cardSerial, balBe
     }
   }
 
-  /* Step 2: all other non-progressive, reel-bearing patterns,
-     sorted LOWEST pay -> HIGHEST pay, via Red Spin */
-  var rsPatterns=winPatterns.filter(function(p){return !p.isProgressive && p.reel;});
-  rsPatterns.sort(function(a,b){return a.pay[S.cpl-1]-b.pay[S.cpl-1];});
+  /* Step 2 + 3: remaining patterns in winPatterns order — basePat (index 0,
+     lowest pay) already played on the MAIN reels, so skip it here. The
+     remaining entries are the middle patterns ascending by pay, followed
+     by Progressive Jackpot LAST (reel:'coverall') as the grand finale.
+     runRS plays each in sequence; when it reaches the Progressive entry
+     it calls showProgJP directly instead of continuing. */
+  var rsSeq=winPatterns.slice(1).filter(function(p){return p.reel;});
+  /* Safety: Progressive must always end the sequence. If basePat itself
+     (winPatterns[0]) is the progressive pattern — i.e. nothing else won —
+     it's already on the main reels but rsSeq would be empty; append it
+     so showProgJP still fires. */
+  if(!rsSeq.some(function(p){return p.isProgressive;})){
+    rsSeq.push(basePat);
+  }
 
   startPatternCycle([basePat]);
   setTimeout(function(){
     stopPatternCycle();
-    runRS(rsPatterns,S.cpl,function(bonusTotal){
-      document.getElementById('bt-box').classList.remove('on');
-      /* Step 3: Progressive Jackpot grand finale */
-      var totalAmt=pennyAmt+bonusTotal+progAmt;
-      S.bal+=bonusTotal+progAmt;S.lastWin=totalAmt;updUI();
-      showProgJP(totalAmt,winPatterns,cardSerial,balBefore);
-    });
+    runRS(rsSeq,S.cpl,function(){ /* unused — Progressive entry ends the sequence */ },
+      {amt:progAmt, pennyAmt:pennyAmt, winPatterns:winPatterns,
+       cardSerial:cardSerial, balBefore:balBefore});
   },600);
 }
 

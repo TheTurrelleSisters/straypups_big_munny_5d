@@ -274,3 +274,39 @@ Cache bust: spbm-v566
 - Spin animation lengthened: main reel stop delays 380/620/900ms ->
   600/1000/1450ms; Red Spin reel stop delays 320/520/720ms -> 500/800/1150ms.
 - Cache bust: spbm-v568
+
+### v5.69 — Progressive Jackpot Now Truly LAST in Sequence
+- Main spin reels no longer forced to 'coverall'. Main reels now always show
+  winPatterns[0] (lowest-pay pattern, e.g. Open Diamond) — Progressive plays
+  during Red Spin as the FINAL entry instead.
+- runRS extended: when it reaches an isProgressive pattern (now always last),
+  its 'coverall' reel symbols land, then showProgJP fires directly as the
+  grand finale — no separate Progressive overlay before Red Spin anymore.
+- Fixed double-counting: bonusTotal was being added to S.bal twice (once
+  per-pattern during the loop, once again at the progressive finale).
+- Safeguard: if no other pattern won (winPatterns[0] is itself Progressive),
+  it's appended to the Red Spin sequence so showProgJP still fires.
+- Correct order end-to-end: Open Diamond -> ... -> Corporal Stripes ->
+  Progressive Jackpot (finale) -> sequence ends.
+- Cache bust: spbm-v569
+
+### v5.70 — Lazy-T Pattern + Progressive Symbol on Reel Strips (Bonanza Bingo)
+- NEW dedicated Progressive trigger pattern "Lazy-T" replaces the old
+  all-25-cells "Progressive Jackpot" entry. Cells = O column (4,9,14,19,24)
+  + N/middle row (10,11,12,13,14) = 9 cells, matching Bonanza Bingo Lazy-T
+  shape. reel:'coverall' (7-7-7), isProgressive:true, pay:[0,0,0].
+- A Cover-All-25 card (from generateCoverAllSpin) satisfies Lazy-T
+  automatically (9 cells are a subset of all-25) alongside Cover All 40/75
+  and the ~20 paytable patterns — all stack as before.
+- Symbol 7 (Progressive mascot) added to all 3 reel strips — now appears
+  7 times per 50-symbol reel, evenly distributed alongside symbols 0-5.
+  Previously symbol 7 existed only as an artificially-inserted result for
+  forced 7-7-7 spins, never as a real spinning symbol.
+- forcedSpinResult: for any NON-Lazy-T winning pattern that uses symbol 0
+  (Scott) as a wild, each wild slot now randomly shows Scott(0) or
+  Progressive(7) (50/50, shuffled per spin) — e.g. Tee can show
+  Progressive+1Bar+1Bar, Hopscotch can show Progressive+Cherry+blank, etc.
+  Lazy-T's fixed 7-7-7 is left untouched (not a substitution).
+- Renamed 'Progressive Jackpot' -> 'Lazy-T' throughout (game.js _forcePat
+  objects, progressive.js fallback pattern names).
+- Cache bust: spbm-v570
