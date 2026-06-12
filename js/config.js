@@ -155,6 +155,19 @@ var BINGO_PATTERNS = [
   // Reel shows new StrayPup Progressive symbol (coverall).
   // Do NOT change balls threshold without owner approval.
   {name:'Progressive Jackpot', balls:25, pay:[0,0,0],     reel:'coverall',
-   cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], isProgressive:true}
+   cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], isProgressive:true},
+
+  // ── COVER ALL — SEQUENCE-ENDING RULES ───────────────────────────────────
+  // These are not slot-reel wins (reel:null = no reel stops). They represent
+  // bingo-rule sequence-ending conditions and stack with Progressive Jackpot:
+  // covering all 25 in <=25 balls automatically also satisfies these two
+  // (25 <= 40 <= 75), so all three pay/end together on a Cover-All-25.
+  // Cover All within the pre-called zone (<=40 balls) — awards $0.01, ends sequence.
+  {name:'Cover All 40', balls:40, pay:[0.01,0.01,0.01], reel:null,
+   cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]},
+
+  // Cover All in entertainment zone (<=75 balls) — no pay, ends sequence.
+  {name:'Cover All 75', balls:75, pay:[0,0,0], reel:null,
+   cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]}
 
 ];

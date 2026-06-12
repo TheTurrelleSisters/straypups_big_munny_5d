@@ -751,12 +751,17 @@ function generateCoverAllSpin(){
   renderBingoCard(BG.card, BG.matchedCells, null);
   renderBallStrip(BG.callSeq, BG.ballPos, BG.cardNumSet);
 
-  /* Evaluate ALL patterns — since every cell is daubed, every pattern
-     with balls<=40 qualifies (Cover All pattern itself requires<=25). */
+  /* Evaluate ALL patterns — every cell is daubed, so:
+     - All 20 normal paytable patterns (balls<=40) qualify.
+     - All 3 Cover-All patterns (25/40/75) qualify too, since covering
+       all 25 in <=25 balls also satisfies the <=40 and <=75 thresholds.
+       Per bingo rules these stack together (Progressive + $0.01 Cover
+       All 40 + Cover All 75, sequence ends, full celebration). */
   var winPatterns = [];
   for (var pi = 0; pi < BINGO_PATTERNS.length; pi++) {
     var pat = BINGO_PATTERNS[pi];
-    if (pat.balls > 40) continue;
+    if (pat.balls > 40 && !pat.isProgressive && pat.reel !== null) continue;
+    if (pat.balls > 75) continue;
     winPatterns.push(pat);
   }
 
@@ -1329,8 +1334,10 @@ function doSpin(){
 
       var _denom=(typeof DENOM!=='undefined'?DENOM:1);
       var basePat=winPatterns[0];
-      /* rsPatterns = patterns for Red Spin — exclude progressive (handled separately) */
-      var rsPatterns=winPatterns.slice(1).filter(function(p){return !p.isProgressive;});
+      /* rsPatterns = patterns for Red Spin animation — exclude progressive
+         (handled separately) and Cover All 40/75 (reel:null, no reel stops
+         per design; their pay is still included via _allPatsBonus below). */
+      var rsPatterns=winPatterns.slice(1).filter(function(p){return !p.isProgressive && p.reel;});
 
       // Detect progressive BEFORE crediting base pay — prevents double-credit + wrong toast
       var _progPat=null;
@@ -1370,6 +1377,16 @@ function doSpin(){
 
       // ── Normal (non-progressive) win ──────────────────────────────────────
       var baseAmt=basePat.pay[S.cpl-1]*_denom;
+      /* Cover All 40/75 (reel:null, excluded from rsPatterns) — always add
+         their pay (e.g. Cover All 40's $0.01) on top, even if basePat is a
+         different pattern. Avoid double-counting if basePat itself IS one
+         of these. */
+      for(var _cwi=0;_cwi<winPatterns.length;_cwi++){
+        var _cwp=winPatterns[_cwi];
+        if(_cwp!==basePat && !_cwp.isProgressive && _cwp.reel===null){
+          baseAmt+=_cwp.pay[S.cpl-1]*_denom;
+        }
+      }
       S.bal+=baseAmt;S.lastWin=baseAmt;flashCenter();
       setWin(baseAmt,basePat.name.toUpperCase());
       updUI();
