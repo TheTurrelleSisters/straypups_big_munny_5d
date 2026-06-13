@@ -475,3 +475,26 @@ empty and let us apply the real fix.
   >15s, not on cumulative multi-pattern sequence length.
 - Cache bust: spbm-v578
 
+
+### v5.79 — $5 Bet Display Fix (v5d), Lockup Fix, Presence Retry
+- v5d ONLY: fmt() had a stray *DENOM (fmt(n){return "$"+(n*DENOM).toFixed(2);}),
+  inflating ALL displayed dollar amounts (balance, bets, wins, jackpot
+  popups) by 5x — e.g. a $15 max bet displayed/deducted as $75. S.bal,
+  S.cpl*DENOM, pay[]*DENOM were ALREADY correct dollar values; fmt() was
+  double-converting. Fixed to match v5_27_PWA (no *DENOM).
+- Fixed "game locked up after progressive hit": the v5.78 watchdog-refresh
+  fix still fired 15s after entering a player-dismissed celebration
+  (showJP/showProgJP), force-unlocking controls (setCtrl(true)) while the
+  celebration overlay was still visible/blocking. Waiting for a tap is
+  normal, not "stuck". Now: watchdog is CLEARED (not refreshed) before
+  these celebrations, and RE-ARMED at the start of the dismiss handler to
+  still catch a genuine hang during post-celebration cleanup.
+- PRESENCE FIX (root cause of "0 connected players" since early builds):
+  _subscribePresence used a ONE-SHOT subscribe — if the first attempt
+  returned CHANNEL_ERROR/TIMED_OUT/CLOSED (e.g. during Supabase free-tier
+  Realtime tenant cold-start), .track() never fired and this player was
+  PERMANENTLY invisible to presence for the session, with zero retries.
+  Now retries with exponential backoff (2s->4s->8s...capped 30s) using the
+  same removeChannel-then-resubscribe pattern as wabc.js.
+- Cache bust: spbm-v579
+

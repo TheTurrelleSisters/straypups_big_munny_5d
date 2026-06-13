@@ -1021,7 +1021,7 @@ var CURRENT_SYMS=[5,4,1];
 var CURRENT_GHOSTS=[{above:6,sym:5,below:4},{above:6,sym:4,below:3},{above:3,sym:1,below:6}];
 var CPL=[1,2,3];
 
-function fmt(n){return '$'+(n*DENOM).toFixed(2);}
+function fmt(n){return '$'+n.toFixed(2);} /* S.bal/payouts are already in dollars (S.cpl*DENOM, pay[]*DENOM) — do NOT multiply by DENOM again here */
 function fmtMoney(n){var v=parseFloat(n);if(isNaN(v))return '$0.00';var p=v.toFixed(2).split('.');p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');return '$'+p.join('.');} /* $5 denom — credits * DENOM */
 function fmtRaw(n){return '$'+n.toFixed(2);} /* raw dollar, no denom mult */
 function updUI(){
@@ -1050,6 +1050,21 @@ function _refreshSpinWatchdog(){
       if(cel) cel.classList.remove('show');
     }
   },15000);
+}
+
+/* Clear the spin watchdog WITHOUT rescheduling it. Used before showing a
+   player-dismissed celebration overlay (showJP/showProgJP) — waiting for
+   a tap is normal and can legitimately take longer than 15s; it is NOT
+   "stuck". Previously _refreshSpinWatchdog() was called here, which still
+   fired 15s later if the player simply hadn't tapped yet, force-unlocking
+   all controls (setCtrl(true)) while the celebration overlay was still
+   visible/blocking — the game appeared "locked up" (frozen celebration
+   over an unlocked board). The watchdog is re-armed via
+   _refreshSpinWatchdog() at the START of the dismiss handler, to still
+   catch a genuine hang during POST-celebration cleanup (full-card daub,
+   opLog, new WABC sequence request, etc). */
+function _clearSpinWatchdog(){
+  if(_spinWatchdog){ clearTimeout(_spinWatchdog); _spinWatchdog=null; }
 }
 
 function setCtrl(en){
@@ -1293,7 +1308,7 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         var _totalAmt=progCtx.pennyAmt+bonusTotal+progCtx.amt;
         S.bal+=progCtx.amt;S.lastWin=_totalAmt;updUI();
         setTimeout(function(){
-          _refreshSpinWatchdog();
+          _clearSpinWatchdog();
           showProgJP(_totalAmt,progCtx.winPatterns,progCtx.cardSerial,progCtx.balBefore);
         },500);
         return;
@@ -1313,8 +1328,9 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         redOv.classList.remove('on');badge.classList.remove('on');
         sndRedSpinEnd();
         setTimeout(function(){
-          _refreshSpinWatchdog();
+          _clearSpinWatchdog();
           showJP(payAmt,function(){
+          _refreshSpinWatchdog();
           bonusTotal+=payAmt;S.bal+=payAmt;updUI();
           setTimeout(function(){playNext();},300);
         });},500);return;
@@ -1654,6 +1670,10 @@ function showProgJP(progAmt, winPatterns, cardSerial, balBefore) {
   var dismissBtn = document.getElementById('fw-dismiss');
   function onDismiss() {
     if (!_dismissReady) return; /* ignore residual tap from prior overlay */
+    /* Re-arm the watchdog now that we're in the cleanup phase
+       (full-card daub, opLog, new WABC sequence request) — this CAN
+       hang on a DB issue, unlike waiting for the player's tap. */
+    _refreshSpinWatchdog();
     if (cel) cel.classList.remove('show');
     if (dismissBtn) dismissBtn.removeEventListener('click', onDismiss);
 

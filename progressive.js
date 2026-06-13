@@ -462,6 +462,7 @@ var Progressive = (function () {
   /* ═══════════════════════════════════════════════════════════════
      PRESENCE
      ═══════════════════════════════════════════════════════════════ */
+  var _presenceRetryDelay = 2000;
   function _subscribePresence() {
     /* Expose client for Floor Manager writes and WABC client reuse.
        _wabcSupabaseClient MUST be set before WABC.init() runs so wabc.js
@@ -469,6 +470,10 @@ var Progressive = (function () {
        Supabase clients and multiple wabc-ballpos channel subscriptions. */
     window._floorSupabaseClient = _client;
     window._wabcSupabaseClient  = _client;
+    _doSubscribePresence();
+  }
+
+  function _doSubscribePresence() {
     _presenceChannel = _client.channel('presence-lobby', {
       config: { presence: { key: _sessionKey } }
     });
@@ -487,6 +492,7 @@ var Progressive = (function () {
       })
       .subscribe(function (status) {
         if (status === 'SUBSCRIBED') {
+          _presenceRetryDelay = 2000; /* reset backoff on success */
           _joinedAt = new Date().toISOString();
           _presenceChannel.track({
             gameId:      PROG_GAME_ID,
@@ -497,6 +503,27 @@ var Progressive = (function () {
             sessionKey:  _sessionKey,
             lastSpin:    null
           });
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          /* Previously a ONE-SHOT subscribe — if the first attempt failed
+             (e.g. during Supabase free-tier Realtime tenant cold-start),
+             .track() never fired and this player was PERMANENTLY invisible
+             to presence for the rest of the session, with no retry. Retry
+             with the same removeChannel-then-resubscribe pattern used by
+             wabc.js, with exponential backoff up to 30s. */
+          console.warn('[Progressive] presence channel ' + status + ' — reconnecting in ' + (_presenceRetryDelay/1000) + 's');
+          var _old = _presenceChannel;
+          var _delay = _presenceRetryDelay;
+          _presenceRetryDelay = Math.min(_presenceRetryDelay * 2, 30000);
+          setTimeout(function () {
+            try {
+              var _rm = _client.removeChannel(_old);
+              if (_rm && typeof _rm.then === 'function') {
+                _rm.then(_doSubscribePresence).catch(_doSubscribePresence);
+              } else {
+                _doSubscribePresence();
+              }
+            } catch (e) { _doSubscribePresence(); }
+          }, _delay);
         }
       });
   }
