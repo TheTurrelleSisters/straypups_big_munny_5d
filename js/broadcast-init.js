@@ -56,10 +56,11 @@
       var target = (row.winner_game || '').trim();
       if (target === '' || target === 'WABC' || target === gameId) {
         if (typeof BG !== 'undefined') BG.usingServerBalls = false;
-        var banner = document.getElementById('prog-offline-banner');
-        var lbl    = document.getElementById('prog-meter-lbl');
-        if (banner) banner.classList.add('show');
-        if (lbl) { lbl.classList.add('local-mode'); lbl.textContent = '\u2605 LOCAL BALL CALL \u2605'; }
+        /* WABC ball-call mode is INDEPENDENT of the Progressive jackpot
+           connection. #prog-offline-banner and #prog-meter-lbl are owned
+           solely by progressive.js's own connection state (_localMode) —
+           do NOT touch them here. The ball-call badge (LIVE/LOCAL) already
+           reflects this mode correctly. */
         if (typeof updateBallCallBadge === 'function') updateBallCallBadge();
         showBroadcastToast('Wide area ball call temporarily unavailable.', '\u26a0 Local Mode Active');
       }
@@ -71,12 +72,6 @@
       if (target2 === '' || target2 === 'WABC' || target2 === gameId) {
         if (typeof fetchServerBallCall === 'function') {
           fetchServerBallCall(function() {
-            var banner2 = document.getElementById('prog-offline-banner');
-            var lbl2    = document.getElementById('prog-meter-lbl');
-            if (typeof BG !== 'undefined' && BG.usingServerBalls) {
-              if (banner2) banner2.classList.remove('show');
-              if (lbl2) { lbl2.classList.remove('local-mode'); lbl2.textContent = '\u2605 PROGRESSIVE JACKPOT \u2605'; }
-            }
             if (typeof updateBallCallBadge === 'function') updateBallCallBadge();
             showBroadcastToast('Wide area ball call restored.', '\u2714 Wide Area Restored');
           });

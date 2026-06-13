@@ -263,9 +263,15 @@ function opLog(rec){if(typeof opLogImpl==='function') opLogImpl(rec); _writeGame
    Non-blocking fire-and-forget. Never stalls the game.
    Requires Progressive to be connected (has the Supabase client). */
 function _writeGameHistory(rec) {
-  if (typeof Progressive === 'undefined' || !Progressive.isConnected()) return;
+  if (typeof Progressive === 'undefined' || !Progressive.isConnected()) {
+    console.warn('[GameHistory] SKIPPED — Progressive not connected (isConnected()=false)');
+    return;
+  }
   var _client = window._floorSupabaseClient;
-  if (!_client) return;
+  if (!_client) {
+    console.warn('[GameHistory] SKIPPED — window._floorSupabaseClient not set');
+    return;
+  }
   var _denom = (typeof DENOM !== 'undefined' ? DENOM : 1);
   var _gameId = (typeof PROG_GAME_ID !== 'undefined') ? PROG_GAME_ID : 'straypups_1d';
   var _gameTitle = _gameId === 'straypups_5d' ? 'StrayPups Big Munny $5' : 'StrayPups Big Munny $1';
@@ -291,7 +297,11 @@ function _writeGameHistory(rec) {
   /* CASH_IN stores amount in bet field; CASH_OUT stores in win field */
   if (rec.type === 'CASH_IN')  { row.bet = parseFloat(rec.amount) || 0; row.win = 0; }
   if (rec.type === 'CASH_OUT') { row.win = parseFloat(rec.amount) || 0; row.bet = 0; }
-  try { _client.from('game_history').insert(row); } catch(e) {}
+  try {
+    _client.from('game_history').insert(row).then(function(res){
+      if (res && res.error) console.warn('[GameHistory] insert FAILED:', res.error.message, row);
+    });
+  } catch(e) { console.warn('[GameHistory] insert threw:', e); }
 }
 function genGameSerial(){
   var t=Date.now().toString(16);

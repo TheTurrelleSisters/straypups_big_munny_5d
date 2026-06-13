@@ -436,3 +436,26 @@ KNOWN OPEN ISSUE (not yet investigated): both StrayPups games appear to be
 broadcasting DIFFERENT ball-call sequences again (regression) — possible
 WABC/local-vs-wide-area switching issue. To be investigated next session.
 
+
+### v5.77 — game_history Diagnostic Logging + WABC/Progressive Banner Decoupling
+- CONFIRMED via direct SQL query: game_history table has ZERO rows ever
+  inserted. _writeGameHistory() (called via opLog on every spin/cash-in/
+  cash-out) has never successfully completed.
+- Added diagnostic console.warn logging to pinpoint exactly where it fails:
+  - "[GameHistory] SKIPPED — Progressive not connected" if isConnected()=false
+  - "[GameHistory] SKIPPED — window._floorSupabaseClient not set" if the
+    shared client was never exposed
+  - "[GameHistory] insert FAILED: <error>" if the DB rejects the row
+    (schema/RLS/type mismatch)
+- broadcast-init.js: force_local_ball / restore_wide_ball (WABC ball-call
+  mode) no longer touch #prog-offline-banner / #prog-meter-lbl. These are
+  owned exclusively by progressive.js connection state. Previously, forcing
+  local ball call incorrectly showed "PROGRESSIVE JACKPOT UNAVAILABLE —
+  RECONNECTING" even though Progressive itself was fine. Ball-call mode is
+  already correctly shown via the LIVE/LOCAL badge.
+- Cache bust: spbm-v577
+
+NEXT STEP: do a few test spins, then check browser console for
+"[GameHistory]" messages — this will tell us exactly why the table is
+empty and let us apply the real fix.
+
