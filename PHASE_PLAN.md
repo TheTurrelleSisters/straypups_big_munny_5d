@@ -459,3 +459,19 @@ NEXT STEP: do a few test spins, then check browser console for
 "[GameHistory]" messages — this will tell us exactly why the table is
 empty and let us apply the real fix.
 
+
+### v5.78 — Red Spin Button-Mash Fixed (Watchdog Refresh)
+- The 15s spin watchdog (added to catch genuine DB/exception hangs) was
+  set ONCE at spin start and never refreshed. Full Lazy-T progressive
+  sequences (multiple Red Spin patterns + finale celebrations) can
+  legitimately run 20-40+ seconds, so the watchdog fired MID-SEQUENCE,
+  force-set S.spinning=false and called setCtrl(true) -> re-enabled ALL
+  buttons while runRS was still playing the celebration. Players could
+  then press SPIN to start a new spin, interrupting/skipping the
+  in-progress sequence.
+- Added _refreshSpinWatchdog(): now called at the start of each Red Spin
+  pattern in runRS, and again before each finale celebration (showJP /
+  showProgJP). Watchdog now only fires if a SINGLE stage genuinely hangs
+  >15s, not on cumulative multi-pattern sequence length.
+- Cache bust: spbm-v578
+

@@ -1031,6 +1031,27 @@ function updUI(){
   document.getElementById('betval').textContent=fmtRaw(S.cpl*DENOM);
   document.getElementById('cdisp').textContent=S.cpl;
 }
+/* Refresh the spin watchdog — called at each stage of a long Red
+   Spin/Lazy-T progressive sequence. The 15s watchdog exists to catch a
+   genuinely STUCK spin (DB hang, exception), but the full progressive
+   celebration sequence can legitimately run 20-40+ seconds across many
+   patterns. Without refreshing, the watchdog fired mid-sequence,
+   force-re-enabled all buttons (setCtrl(true)) while runRS was still
+   playing, letting players press SPIN to skip/interrupt the in-progress
+   celebration. Refreshing at each stage means it only fires if a SINGLE
+   stage hangs >15s — a real hang — not on cumulative sequence length. */
+function _refreshSpinWatchdog(){
+  if(_spinWatchdog) clearTimeout(_spinWatchdog);
+  _spinWatchdog=setTimeout(function(){
+    if(S.spinning){
+      console.warn('[Watchdog] Spin stuck >15s — force unlocking');
+      _spinWatchdog=null; S.spinning=false; setCtrl(true); updUI();
+      var cel=document.getElementById('force-win-cel');
+      if(cel) cel.classList.remove('show');
+    }
+  },15000);
+}
+
 function setCtrl(en){
   var ids=['spin-btn','cred-btn','max-btn','co-btn','ic-btn','help-btn'];
   for(var i=0;i<ids.length;i++) document.getElementById(ids[i]).disabled=!en;
@@ -1242,6 +1263,7 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
       onDone(bonusTotal);return;
     }
     var pat=rsPatterns[seqIdx];seqIdx++;
+    _refreshSpinWatchdog();
     badge.textContent='RED SPIN '+seqIdx;
     /* Show this pattern's name + highlight its cells on the bingo card
        while its reel animation plays. */
@@ -1271,6 +1293,7 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         var _totalAmt=progCtx.pennyAmt+bonusTotal+progCtx.amt;
         S.bal+=progCtx.amt;S.lastWin=_totalAmt;updUI();
         setTimeout(function(){
+          _refreshSpinWatchdog();
           showProgJP(_totalAmt,progCtx.winPatterns,progCtx.cardSerial,progCtx.balBefore);
         },500);
         return;
@@ -1289,7 +1312,9 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         frame2.classList.remove('bonus-active');
         redOv.classList.remove('on');badge.classList.remove('on');
         sndRedSpinEnd();
-        setTimeout(function(){showJP(payAmt,function(){
+        setTimeout(function(){
+          _refreshSpinWatchdog();
+          showJP(payAmt,function(){
           bonusTotal+=payAmt;S.bal+=payAmt;updUI();
           setTimeout(function(){playNext();},300);
         });},500);return;
