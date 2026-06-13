@@ -246,7 +246,15 @@ var WABC = (function() {
   function init(onReady) {
     _loadSDK(function() {
       if (!_client) {
-        try { _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+        try { _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: false, detectSessionInUrl: false,
+            storage: {
+              getItem: function(key){ return null; },
+              setItem: function(key,value){},
+              removeItem: function(key){}
+            }
+          }
+        }); }
         catch(e) { console.warn('[WABC] init failed:', e); if (onReady) onReady(); return; }
       }
       _fetchInitial(function() {

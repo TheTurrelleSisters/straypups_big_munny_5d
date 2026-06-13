@@ -611,7 +611,15 @@ var Progressive = (function () {
         return;
       }
       try {
-        _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: false, detectSessionInUrl: false,
+            storage: {
+              getItem: function(key){ return null; },
+              setItem: function(key,value){},
+              removeItem: function(key){}
+            }
+          }
+        });
         /* _connected set AFTER DB responds — not before */
         _fetchRow(function () {
           if (!_localValue || _localValue === 500) {
