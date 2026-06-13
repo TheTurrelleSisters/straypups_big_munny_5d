@@ -132,11 +132,26 @@ var WABC = (function() {
 
   /* ── BROADCAST SUBSCRIBE ── */
   function _subscribe() {
+    /* removeChannel() is ASYNC (returns a Promise) — creating a new
+       channel with the SAME topic name ('wabc-ballpos') before the old
+       one has fully left causes Supabase Realtime to reject the new join
+       (CHANNEL_ERROR), then close the old one shortly after (CLOSED),
+       triggering an endless reconnect loop. Await removal first. */
     if (_channel) {
-      try { _client.removeChannel(_channel); } catch(e) {}
+      var _oldChannel = _channel;
       _channel = null;
+      try {
+        var _rm = _client.removeChannel(_oldChannel);
+        if (_rm && typeof _rm.then === 'function') {
+          _rm.then(_doSubscribe).catch(_doSubscribe);
+          return;
+        }
+      } catch(e) {}
     }
+    _doSubscribe();
+  }
 
+  function _doSubscribe() {
     _channel = _client.channel('wabc-ballpos', {
       config: { broadcast: { self: false } }
     });

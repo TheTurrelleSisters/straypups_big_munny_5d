@@ -389,3 +389,22 @@ Cache bust: spbm-v572
   label, for both Force Jackpot and natural hit records. Hit History will
   now show the player's actual nickname.
 - Cache bust: spbm-v574
+
+### v5.75 — CRITICAL: WABC Channel Reconnect Loop Fixed (likely root cause of 0-players)
+- Log evidence showed an INFINITE loop: "Channel CHANNEL_ERROR — reconnecting
+  in 2s" -> "Channel CLOSED — reconnecting in 4s" -> "Broadcast channel
+  connected" -> CHANNEL_ERROR... repeating forever, with _onConnClose firing
+  on the underlying WEBSOCKET connection itself (not just one channel).
+- Root cause: _subscribe() called _client.removeChannel(_channel) WITHOUT
+  awaiting its Promise, then immediately created a NEW channel with the SAME
+  topic name ('wabc-ballpos'). Supabase Realtime rejected the duplicate join
+  (CHANNEL_ERROR) before the old one finished leaving (CLOSED shortly after),
+  triggering reconnect -> same race -> infinite loop.
+- Fix: _subscribe() now awaits removeChannel()'s promise (via .then/.catch)
+  before creating the new channel via new _doSubscribe().
+- Since ALL Realtime channels (including presence-lobby) share ONE
+  websocket, a socket that never stabilizes resets presence state on
+  every 2-4s cycle — this is the most likely explanation for the
+  persistent "0 connected players" across WABC/Progressive Operator/Floor
+  Manager seen all session.
+- Cache bust: spbm-v575
