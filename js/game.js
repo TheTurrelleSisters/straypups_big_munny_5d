@@ -1266,17 +1266,21 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         return;
       }
       if(pat.reel==='jp'){
+        if(progCtx){
+          /* Lazy-T is also winning this spin (progCtx set) — its finale
+             will be the SINGLE celebration for the whole spin. Skip
+             Corporal Stripes' own "$X JACKPOT" popup; just add its pay
+             to the running total and continue straight to the next entry. */
+          bonusTotal+=payAmt;S.bal+=payAmt;updUI();
+          playNext();return;
+        }
+        /* No Lazy-T this spin — Corporal Stripes is the highest pattern
+           and gets its own Congratulations celebration as the finale. */
         frame2.classList.remove('bonus-active');
         redOv.classList.remove('on');badge.classList.remove('on');
         sndRedSpinEnd();
         setTimeout(function(){showJP(payAmt,function(){
           bonusTotal+=payAmt;S.bal+=payAmt;updUI();
-          /* Small delay before continuing to the NEXT pattern in the
-             sequence (e.g. Lazy-T finale) — keeps celebrations visually
-             distinct and lets the dismiss-tap's event fully settle first.
-             Was incorrectly calling onDone() here, ending the whole
-             sequence early and skipping any patterns after Corporal
-             Stripes (including the Progressive finale). */
           setTimeout(function(){playNext();},300);
         });},500);return;
       }

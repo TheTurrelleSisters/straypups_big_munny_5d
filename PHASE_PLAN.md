@@ -339,3 +339,53 @@ Stripes ($800 celebration) -> Lazy-T (Progressive finale, showProgJP) ->
 sequence ends. Cover All 40/75 awarded silently via penny-toast, unaffected
 by reel ordering.
 Cache bust: spbm-v571
+
+### v5.72 — Single Combined Celebration (Corporal Stripes + Lazy-T)
+Per Sasha's feedback on v5.71 test: when BOTH Corporal Stripes AND Lazy-T
+win in the same spin, only ONE final celebration should show.
+
+- runRS's 'jp' branch (Corporal Stripes) now checks progCtx:
+  - If progCtx is set (Lazy-T also winning this spin): SKIP Corporal
+    Stripes' own "$X JACKPOT" popup entirely. Silently add its pay to
+    bonusTotal/S.bal and continue to the next entry. Lazy-T's showProgJP
+    becomes the SINGLE finale, with Corporal Stripes' amount folded into
+    the total (already added to the accumulative win via _allPatsBonus +
+    bonusTotal -> Lazy-T's totalAmt).
+  - If progCtx is null (no Lazy-T this spin): Corporal Stripes plays its
+    own "$X JACKPOT" Congratulations celebration as the spin's finale,
+    as before.
+
+Result: exactly one celebration overlay per spin, regardless of whether
+Corporal Stripes, Lazy-T, or both win. Progressive amount is always part
+of the single accumulative total shown.
+Cache bust: spbm-v572
+
+### v5.73 — Pattern Name Position + Pot Reset Fix
+- #bingo-pattern-name moved from full-width (above both card AND ball strip)
+  to sit ONLY above the bingo card column (first child of #bingo-card-wrap).
+  Font size/letter-spacing reduced (13px/3px -> 10px/1px) to fit the
+  narrower card-width column, with ellipsis overflow for long pattern names.
+- armAndClaim's !_connected/!_client fallback path now resets _localValue
+  to _seed (and notifies listeners) after paying out — previously the pot
+  meter stayed stuck at the pre-win value when this offline/disconnected
+  path fired (likely related to the ongoing Realtime/0-players issue).
+  Server-side DB reset still requires a working connection, but the
+  player's own display is now consistent.
+- Cache bust: spbm-v573
+
+### v5.74 — Pot Reset Diagnostic + Player Nickname Fix
+- _claimForceWin's progressive_hit RPC call (the server-side pot reset for
+  Force Jackpot wins) NEVER checked rpcRes.error. Supabase RPC failures
+  resolve with {error:...} rather than rejecting the promise, so a failed
+  reset was silently treated as success — the winning player's LOCAL
+  display reset to seed (false success), while the DB pot was never
+  actually reset, explaining why other players/operator never saw a
+  reset and why the player's own display reverted on the next refresh.
+  Now logs a console.warn with the actual error message if this RPC fails
+  — needed to diagnose root cause server-side (likely RPC permissions or
+  signature mismatch in Supabase).
+- Fixed progressive_hits insert: player_label now uses _playerNickname
+  (player's chosen name) instead of the generic auto-assigned "Player N"
+  label, for both Force Jackpot and natural hit records. Hit History will
+  now show the player's actual nickname.
+- Cache bust: spbm-v574

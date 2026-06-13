@@ -549,7 +549,15 @@ var Progressive = (function () {
           onClaimed(false);
           return;
         }
-        _client.rpc('progressive_hit', { reset_to: _seed }).then(function () {
+        _client.rpc('progressive_hit', { reset_to: _seed }).then(function (rpcRes) {
+          /* Supabase RPC errors resolve with {error:...}, NOT a rejected
+             promise — must check explicitly or a failed server-side reset
+             goes completely unnoticed, leaving the DB pot unchanged while
+             this client falsely believes it reset (until the next periodic
+             _fetchRow overwrites _localValue back to the stale DB value). */
+          if (rpcRes && rpcRes.error) {
+            console.warn('[Progressive] progressive_hit RPC FAILED — pot NOT reset server-side:', rpcRes.error.message);
+          }
           /* Small delay to ensure RPC transaction commits before insert */
           setTimeout(function() {
             _client.from('progressive_hits').insert({
@@ -560,7 +568,7 @@ var Progressive = (function () {
               balls:          0,
               bet:            0,
               player_session: _sessionKey,
-              player_label:   _playerLabel || _sessionKey,
+              player_label:   _playerNickname || _playerLabel || _sessionKey,
               game_title:     PROG_GAME_TITLES[PROG_GAME_ID] || PROG_GAME_ID,
               win_patterns:   'Force Jackpot'
             }).then(function(r) {
@@ -684,7 +692,7 @@ var Progressive = (function () {
       balls:          (info && info.balls)   ? info.balls   : 0,
       bet:            (info && info.bet)     ? info.bet     : 0,
       player_session: _sessionKey,
-      player_label:   _playerLabel || _sessionKey,
+      player_label:   _playerNickname || _playerLabel || _sessionKey,
       game_title:     PROG_GAME_TITLES[PROG_GAME_ID] || PROG_GAME_ID,
       win_patterns:   patternNames
     };
@@ -776,7 +784,12 @@ var Progressive = (function () {
       return;
     }
     if (!_connected || !_client) {
+      /* No DB connection — pay out the current local pot value, then reset
+         the LOCAL display to seed so the meter doesn't appear "stuck" at
+         the old amount. Server-side reset can't happen without a
+         connection, but the player's own display should still be correct. */
       var _offlineAmt = parseFloat(_localValue.toFixed(2));
+      _localValue = _seed; _notifyValue();
       if (onResult) onResult(true, _offlineAmt);
       return;
     }
