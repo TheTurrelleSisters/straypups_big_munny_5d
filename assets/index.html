@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<title>StrayPups Big Munny $5 v5.87</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#08000f">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="StrayPups $5">
+<link rel="stylesheet" href="css/styles.css?v=5.87">
+</head>
+<body>
+<div id="asset-store">
+  <img id="img-scott" src="assets/scott_full.png" alt="" hidden>
+  <img id="img-splash" src="assets/splash.jpg" alt="" hidden>
+  <img id="img-banner" src="assets/banner.jpg" alt="" hidden>
+  <audio id="snd-credits" src="assets/credits_addup.wav"></audio>
+  <audio id="snd-redspin" src="assets/red_spin_music.mp3"></audio>
+  <audio id="snd-ring" src="assets/ring1.mp3"></audio>
+  <audio id="snd-welcome" src="assets/splash_welcome.wav"></audio>
+</div><div id="splash">
+  <div id="splash-bg"></div>
+  <div id="splash-foot">
+    <div id="splash-title">STRAYPUPS BIG MUNNY</div>
+    <div id="splash-ver">$5 &bull; v5.87</div>
+  <div id="splash-conn-status" style="margin-top:8px;font-size:11px;letter-spacing:2px;color:rgba(255,200,0,0.7);min-height:16px;">Connecting&hellip;</div>
+  <div id="splash-ball-status" style="margin-top:3px;font-size:10px;letter-spacing:1px;color:rgba(255,200,0,0.5);min-height:14px;"></div>
+    <div id="splash-bar"><div id="splash-bar-fill"></div></div>
+    <div id="splash-tap">TAP TO PLAY</div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="hdr-img"><img id="hdr-img-el" src="" alt="StrayPups Big Munny"></div>
+
+  <!-- BINGO SECTION: pattern name + card + ball strip -->
+  <div id="bingo-section">
+    <div id="bingo-card-area">
+      <div id="bingo-card-wrap">
+        <div id="bingo-pattern-name">&nbsp;</div>
+        <div id="bingo-col-hdrs">
+          <div class="bcol-hdr">B</div><div class="bcol-hdr">I</div>
+          <div class="bcol-hdr">N</div><div class="bcol-hdr">G</div><div class="bcol-hdr">O</div>
+        </div>
+        <div id="bingo-grid"></div>
+      </div>
+      <!-- Ball strip BELOW card -->
+      <div id="ball-strip-area">
+        <div id="ball-call-badge" style="font-size:10px;font-weight:bold;letter-spacing:1px;padding:2px 6px;border-radius:4px;margin-bottom:3px;color:#ffaa00;"></div>
+  <div id="ball-strip-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REEL SECTION â€” bigger -->
+  <div id="reel-section">
+    <div id="reel-frame">
+      <div id="red-ov"></div>
+      <div id="payline-mark"></div>
+      <div id="pl-left">PAYLINE</div>
+      <div id="pl-right">PAYLINE</div>
+      <div id="rs-badge">RED SPIN</div>
+      <div class="reel" id="r0"><div class="reel-window" id="rw0"><div class="reel-strip" id="rs0"></div></div></div>
+      <div class="reel" id="r1"><div class="reel-window" id="rw1"><div class="reel-strip" id="rs1"></div></div></div>
+      <div class="reel" id="r2"><div class="reel-window" id="rw2"><div class="reel-strip" id="rs2"></div></div></div>
+    </div>
+  </div>
+
+  <!-- PROGRESSIVE OFFLINE BANNER -->
+  <div id="prog-offline-banner">
+    <div class="pob-text">&#9888; Progressive Jackpot Unavailable &mdash; Reconnecting&hellip;</div>
+    <div class="pob-sub">Local jackpot active &bull; Wide area play resumes on reconnect</div>
+  </div>
+  <div id="prog-meter">
+    <div id="prog-meter-lbl">&#9733; PROGRESSIVE JACKPOT &#9733;</div>
+    <div id="prog-meter-val">$500.00</div>
+  </div>
+<div id="win-row">
+    <div class="wbox"><div class="wlbl">WIN</div><div class="wval" id="wval">$0.00</div></div>
+    <div id="bt-box"><div id="bt-lbl">BONUS TOTAL</div><div id="bt-val">$0.00</div></div>
+  </div>
+  <div id="win-msg"></div>
+  <div id="info-bar">
+    <div class="iitem"><div class="ilbl">BALANCE</div><div class="ival" id="bval">$100.00</div></div>
+    <div class="iitem"><div class="ilbl">BET</div><div class="ival" id="betval">$1.00</div></div>
+    <div class="iitem"><div class="ilbl">DENOM</div><div class="ival">$5</div></div>
+  </div>
+  <div id="controls">
+    <div id="ctrl-top">
+      <button class="cbtn" id="cred-btn">CREDITS: <span id="cdisp">1</span></button>
+      <button class="cbtn" id="spin-btn">SPIN</button>
+      <button class="cbtn" id="max-btn">BET MAX<br><span style="font-size:10px">3 CREDITS</span></button>
+    </div>
+    <div id="ctrl-btm">
+      <button class="abtn aco" id="co-btn">$$ CASH OUT</button>
+      <button class="abtn" id="help-btn" style="background:linear-gradient(135deg,#0d001a,#1a0035);border:1.5px solid var(--gold-dk);color:var(--gold-lt)">PAYS</button>
+      <button class="abtn aic" id="ic-btn">+ INSERT CASH</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="jp-ov">
+  <div id="jp-burst"></div><div id="jp-big">JACKPOT!</div>
+  <div id="jp-sub">CONGRATULATIONS!</div><div id="jp-amt"></div>
+  <div id="jp-hint">TAP TO CONTINUE</div>
+</div>
+<div id="ic-ov">
+  <div class="ic-ttl">INSERT CASH</div>
+  <div class="ic-pre-row">
+    <button class="icpre" data-a="100">$100</button><button class="icpre" data-a="500">$500</button>
+    <button class="icpre" data-a="1000">$1,000</button><button class="icpre" data-a="5000">$5,000</button>
+  </div>
+  <div class="ic-row">
+    <span style="color:var(--gold);font-size:19px">$</span>
+    <input class="ic-inp" type="number" id="ic-inp" value="100" min="1" max="9999">
+    <button class="icbtn ok" id="ic-ok">ADD</button>
+    <button class="icbtn" id="ic-no">CANCEL</button>
+  </div>
+</div>
+<div id="help">
+  <div id="help-hdr"><div id="help-ttl">PAY TABLE</div><button id="help-close">CLOSE</button></div>
+  <div id="help-body"></div>
+</div>
+
+<script>
+  var PROG_GAME_ID = 'straypups_5d';
+  var PROG_DENOM   = 5.00;
+  // Register PWA service worker
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('service-worker.js').catch(function(e) {
+        console.warn('SW reg failed:', e);
+      });
+    });
+  }
+</script>
+<script src="js/progressive.js?v=5.87"></script>
+<script src="wabc.js?v=1.2"></script>
+<script src="js/config.js?v=5.87"></script>
+<script src="js/game.js?v=5.87"></script>
+<script src="js/operator.js?v=5.87"></script>
+<script src="broadcast-init.js?v=5.87"></script>
+<!-- lobby-promo removed -->
+
+
+<!-- ATTITUDE CHECK — shown on non-winner devices -->
+<div id="attitude-check">
+  <div id="ac-top">&#9733; Gold Coins Casino &#9733;</div>
+  <div id="ac-title">ATTITUDE CHECK!!!</div>
+  <div id="ac-winner">Someone Just Won The Progressive Jackpot!</div>
+  <div id="ac-jackpot-amt">$0.00</div>
+  <div id="ac-sub2">Progressive Jackpot!</div>
+  <div id="ac-game" style="font-size:11px;color:#ffd700;letter-spacing:1px;margin-top:4px"></div>
+  <div id="ac-msg">Keep playing for your chance!!!</div>
+  <button id="ac-dismiss" onclick="document.getElementById('attitude-check').classList.remove('show')">
+    GOT IT &#128074;
+  </button>
+</div>
+
+<!-- FORCE WIN CELEBRATION — shown on winner device -->
+<div id="force-win-cel">
+  <video id="fw-video" autoplay loop muted playsinline></video>
+  <div id="fw-title">PROGRESSIVE JACKPOT!</div>
+  <div id="fw-amt">$0.00</div>
+  <div id="fw-sub">YOU WON THE FORCE JACKPOT!</div>
+  <button id="fw-dismiss" >
+    COLLECT &#127881;
+  </button>
+</div>
+
+<script>
+(function(){
+  function showAttitudeCheck(amt, winnerGame, winnerLabel) {
+    var el    = document.getElementById('attitude-check');
+    var amtEl = document.getElementById('ac-jackpot-amt');
+    var gameEl = document.getElementById('ac-game');
+    var winEl = document.getElementById('ac-winner');
+    if (amtEl) amtEl.textContent = '$' + (amt || 0).toFixed(2);
+    if (gameEl) gameEl.textContent = winnerGame ? ('Won on ' + winnerGame) : '';
+    if (winEl) winEl.textContent = (winnerLabel || 'Someone') + ' Just Won The Progressive Jackpot!';
+    if (el) el.classList.add('show');
+  }
+
+  if (typeof Progressive !== 'undefined') {
+    Progressive.onForceNotify(showAttitudeCheck);
+  }
+}());
+</script>
+
+<div style="position:fixed;bottom:2px;left:0;right:0;text-align:center;
+font-size:7px;color:rgba(255,215,0,0.18);letter-spacing:2px;pointer-events:none;
+z-index:1;font-family:Arial,sans-serif;font-weight:normal">
+GOLD COINS CASINO &bull; v2.4</div>
+<!-- OPERATOR BROADCAST MESSAGE BANNER -->
+<div id="op-message-banner">
+  <div id="op-msg-icon">&#128226;</div>
+  <div id="op-msg-body">
+    <div id="op-msg-from">&#9733; MESSAGE FROM GOLD COINS CASINO</div>
+    <div id="op-msg-text"></div>
+  </div>
+  <div id="op-msg-close" onclick="dismissOpMessage()">&#10005;</div>
+</div>
+<script>
+(function(){
+  var _msgQueue = [];
+  var _msgShowing = false;
+  var ICONS = { general:'&#128226;', jackpot:'&#127922;', event:'&#9889;', bonus:'&#127873;' };
+
+  function dismissOpMessage() {
+    var el = document.getElementById('op-message-banner');
+    if (el) el.classList.remove('show');
+    _msgShowing = false;
+    /* Show next queued message after short delay */
+    if (_msgQueue.length > 0) {
+      setTimeout(showNextMessage, 800);
+    }
+  }
+  window.dismissOpMessage = dismissOpMessage;
+
+  function showNextMessage() {
+    if (_msgQueue.length === 0) return;
+    var msg = _msgQueue.shift();
+    _msgShowing = true;
+    var el   = document.getElementById('op-message-banner');
+    var icon = document.getElementById('op-msg-icon');
+    var text = document.getElementById('op-msg-text');
+    if (icon) icon.innerHTML = ICONS[msg.type] || ICONS.general;
+    if (text) text.textContent = msg.message;
+    if (el) el.classList.add('show');
+    /* Auto-dismiss after 12 seconds */
+    setTimeout(function() {
+      if (_msgShowing) dismissOpMessage();
+    }, 12000);
+  }
+
+  function queueMessage(msg) {
+    _msgQueue.push(msg);
+    if (!_msgShowing) showNextMessage();
+  }
+
+  /* Hook into Progressive module once it's ready */
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      if (typeof Progressive !== 'undefined' && Progressive.onMessage) {
+        Progressive.onMessage(queueMessage);
+      }
+    }, 500);
+  });
+}());
+</script>
+  
+</body>
+</html>
