@@ -815,3 +815,126 @@ empty and let us apply the real fix.
   v8.2.2 (same PROG_GAME_TITLES rename + new presence fix -- see
   tsbigmunny/PHASE_PLAN.md).
 - Cache bust: spbm-v587. Splash/title version updated to v5.87.
+
+
+### v5.88 — Forced-Jackpot-As-Natural Redesign, Claim-Timing Move, Corporal Stripes Fix, Custom Bingo Card Generator, Longer Reel Spins
+
+Major redesign of the progressive jackpot flow based on live-testing
+feedback. Five interlocking issues, all from the SAME root causes:
+
+**ROOT CAUSE 1 — generateCoverAllSpin() set BG._coverAll1to40=false.**
+This bypassed the v5.85 ball-call-continuation fix entirely for
+operator-forced jackpots: at ball 41, _handleCoverAll(false) fired
+prematurely (stopped the active caller, never restarted) and triggered an
+extra _requestNewWABCSequence() outside the normal flow — the likely
+source of two players seeing different ball calls.
+
+**ROOT CAUSE 2 — armAndClaim/_claimForceWin fired BEFORE _finishProgressiveSpin
+/runRS even started**, for natural AND forced wins alike. The DB claim
+(which triggers Attitude Check for other players) happened before Red
+Spin played Corporal Stripes/Cross Corners/etc and landed on Lazy-T —
+"the jackpot occurred while player 1 was still in a red spin."
+
+**ROOT CAUSE 3 — runRS's Corporal Stripes handling.** When pat.reel==='jp'
+(Corporal Stripes) AND progCtx was set (Lazy-T also winning — ALWAYS true
+for the old forced-jackpot path), the code added its payout and called
+playNext() immediately, skipping setWin/flashCenter/pause entirely —
+visually "Corporal Stripes completely skipped, Cross Corners straight to
+Lazy-T."
+
+**THE FIX:**
+
+1. **generateCoverAllSpin() REPLACED with genBiasedBingoCard(N)**
+   (js/game.js, both games, ~lines 701-790). Builds a card whose 24
+   numbers are BIASED toward the first N balls of the EXISTING shared
+   BG.callSeq — does NOT touch BG.callSeq/BG.ballPos/BG.matchedCells/
+   BG._coverAll1to40 at all. doBingoSpin()'s normal ball-by-ball loop
+   (unchanged) then evaluates this card against the real sequence —
+   genuinely natural pattern detection. If a column's pool comes up short,
+   the remainder is filled with random in-range numbers not already used
+   (may land >N balls — "however the math falls out", per design).
+
+   Every BINGO_PATTERNS entry has balls>=25 (Lazy-T=25, Corporal
+   Stripes=27, ... up to 38, plus Cover All 40/75). So if all 24 numbered
+   cells land by ~ball 24, EVERY pattern — including Lazy-T as the natural
+   finale — is satisfied too. "24 balls + free space = 25 cells" is the
+   same statement as "Lazy-T occurs naturally."
+
+2. **doBingoSpin(biasedBalls)** — new optional param. doSpin() determines
+   _biasedBalls: 24 if Progressive.contribute() returns _forceArmed
+   (operator Force Jackpot or random-trigger), OR Progressive
+   .getCustomCardBalls() if a custom_card command is armed (and
+   immediately consumed via consumeCustomCard()). BG.card =
+   biasedBalls ? genBiasedBingoCard(biasedBalls) : genBingoCard().
+
+3. **doSpin() no longer calls Progressive.claimForce() upfront.** The old
+   "claim async, then generate guaranteed Cover All" block at the end of
+   doSpin is GONE — _continueSpinAfterClaim() is always called directly.
+   _progPat._forceAmt / _forcePat / _forcePatFallback are GONE entirely —
+   there is no separate forced-claim code path anymore.
+
+4. **_finishProgressiveSpin signature changed**:
+   _finishProgressiveSpin(winPatterns, basePat, cardSerial, balBefore,
+   allPatsBonus) — takes allPatsBonus (sum of non-progressive winners'
+   pay) instead of a pre-claimed progAmt. progCtx passed to runRS is now
+   {allPatsBonus, pennyAmt, winPatterns, cardSerial, balBefore} (was
+   {amt, ...}).
+
+5. **runRS's progressive entry (pat.isProgressive&&progCtx) now calls
+   Progressive.armAndClaim(progCtx.winPatterns, callback) itself** —
+   right when Lazy-T lands (reels show 'coverall' symbols), AFTER
+   Corporal Stripes/Cross Corners/etc have already played with the red
+   overlay active. Inside the callback: _claimedAmt = _progAmt +
+   progCtx.allPatsBonus; _totalAmt = pennyAmt + bonusTotal + _claimedAmt;
+   S.bal += _claimedAmt; THEN showProgJP. This is the SINGLE claim point
+   for every progressive win, natural or forced — other players' Attitude
+   Check notifications now fire only at this moment.
+
+6. **runRS Corporal Stripes fix**: `if(pat.reel==='jp'&&!progCtx)` keeps
+   the old showJP-finale branch (Corporal Stripes is the ONLY/highest
+   pattern, no Lazy-T this spin — unchanged). When progCtx IS set
+   (Lazy-T also winning), Corporal Stripes now falls through to the SAME
+   display as every other pattern (setWin/flashCenter/sound/1-2s pause).
+   Red overlay (#red-ov) stays active throughout; playNext() carries
+   straight into Lazy-T.
+
+7. **armAndClaim(winPatterns, onResult) pre-armed-command check**
+   (js/progressive.js, both games): if _forceArmed && _forceCommandId &&
+   !_forceClaimed (operator Force Jackpot or random-trigger already armed
+   a command), claim THAT existing command directly via _claimForceWin
+   instead of inserting a new one. This is what makes
+   "operator pre-arms -> player's naturally-generated winning card (via
+   genBiasedBingoCard) converges and claims it after Red Spin" actually
+   connect. _checkArmedCommand() now filters .eq('command','force_jackpot')
+   so it doesn't also pick up an armed custom_card row.
+
+8. **Attitude Check video** (index.html, both games): #attitude-check had
+   no <video> element (only #force-win-cel/#fw-video did). Added
+   #ac-video (same CEL_VIDS list: assets/videos/{josie_dance,sasha_dance,
+   sasha_alt}.mp4, random pick), CSS (#ac-video absolute/cover/opacity .6,
+   z-index 0; all #ac-* text given position:relative;z-index:1 +
+   text-shadow for readability over the video).
+
+9. **Custom Bingo Card Generator** (NEW — WABC Master operator menu, see
+   wabc_master/PHASE_PLAN.md v1.19): operator arms a one-shot
+   command:'custom_card', balls_to_use:N row in progressive_commands.
+   js/progressive.js (both games): new _customCardArmed/_customCardBalls/
+   _customCardCommandId state, populated via _checkArmedCommand +
+   _subscribeCommands (separate from force_jackpot handling). New exports
+   getCustomCardBalls() / consumeCustomCard(onDone) (marks status=
+   'consumed', one-shot). No progressive-pot/claim logic attached — purely
+   "deal this card to the next spinner."
+
+   SQL (run before deploy, see add_custom_card_column.sql):
+   ALTER TABLE progressive_commands ADD COLUMN IF NOT EXISTS balls_to_use integer;
+   (also check command/status CHECK constraints allow 'custom_card' /
+   'consumed' / 'cancelled' — see SQL file for details)
+
+10. **Reel spin duration increased ~2x** (per Sasha's separate feedback —
+    spins didn't look long enough). spinReel's scroll-symbol count 18->36;
+    main spin STOP_DELAYS [600,1000,1450]->[1200,2000,2900]; Red Spin
+    RS_STOP [500,800,1150]->[1000,1600,2300]. centerIdx/targetY computed
+    dynamically from spinSyms.length, so geometry stays correct. Tune
+    further after testing if it still doesn't feel like enough rotations.
+
+Cache bust: spbm-v588. Splash/title version updated to v5.88.

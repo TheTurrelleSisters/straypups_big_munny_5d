@@ -1,4 +1,4 @@
-var CACHE = 'spbm-v587';
+var CACHE = 'spbm-v588';
 var FILES = [
   './',
   './index.html',

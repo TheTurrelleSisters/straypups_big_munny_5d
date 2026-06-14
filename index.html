@@ -6,7 +6,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
-<title>StrayPups Big Munny $5 v5.87</title>
+<title>StrayPups Big Munny $5 v5.88</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#08000f">
@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="StrayPups $5">
-<link rel="stylesheet" href="css/styles.css?v=5.87">
+<link rel="stylesheet" href="css/styles.css?v=5.88">
 </head>
 <body>
 <div id="asset-store">
@@ -29,7 +29,7 @@
   <div id="splash-bg"></div>
   <div id="splash-foot">
     <div id="splash-title">STRAYPUPS BIG MUNNY</div>
-    <div id="splash-ver">$5 &bull; v5.87</div>
+    <div id="splash-ver">$5 &bull; v5.88</div>
   <div id="splash-conn-status" style="margin-top:8px;font-size:11px;letter-spacing:2px;color:rgba(255,200,0,0.7);min-height:16px;">Connecting&hellip;</div>
   <div id="splash-ball-status" style="margin-top:3px;font-size:10px;letter-spacing:1px;color:rgba(255,200,0,0.5);min-height:14px;"></div>
     <div id="splash-bar"><div id="splash-bar-fill"></div></div>
@@ -142,17 +142,18 @@
     });
   }
 </script>
-<script src="js/progressive.js?v=5.87"></script>
+<script src="js/progressive.js?v=5.88"></script>
 <script src="wabc.js?v=1.2"></script>
-<script src="js/config.js?v=5.87"></script>
-<script src="js/game.js?v=5.87"></script>
-<script src="js/operator.js?v=5.87"></script>
-<script src="broadcast-init.js?v=5.87"></script>
+<script src="js/config.js?v=5.88"></script>
+<script src="js/game.js?v=5.88"></script>
+<script src="js/operator.js?v=5.88"></script>
+<script src="broadcast-init.js?v=5.88"></script>
 <!-- lobby-promo removed -->
 
 
 <!-- ATTITUDE CHECK — shown on non-winner devices -->
 <div id="attitude-check">
+  <video id="ac-video" autoplay loop muted playsinline webkit-playsinline></video>
   <div id="ac-top">&#9733; Gold Coins Casino &#9733;</div>
   <div id="ac-title">ATTITUDE CHECK!!!</div>
   <div id="ac-winner">Someone Just Won The Progressive Jackpot!</div>
@@ -178,14 +179,25 @@
 
 <script>
 (function(){
+  var CEL_VIDS = [
+    'assets/videos/josie_dance.mp4',
+    'assets/videos/sasha_dance.mp4',
+    'assets/videos/sasha_alt.mp4'
+  ];
+
   function showAttitudeCheck(amt, winnerGame, winnerLabel) {
     var el    = document.getElementById('attitude-check');
+    var vid   = document.getElementById('ac-video');
     var amtEl = document.getElementById('ac-jackpot-amt');
     var gameEl = document.getElementById('ac-game');
     var winEl = document.getElementById('ac-winner');
     if (amtEl) amtEl.textContent = '$' + (amt || 0).toFixed(2);
     if (gameEl) gameEl.textContent = winnerGame ? ('Won on ' + winnerGame) : '';
     if (winEl) winEl.textContent = (winnerLabel || 'Someone') + ' Just Won The Progressive Jackpot!';
+    if (vid) {
+      vid.src = CEL_VIDS[Math.floor(Math.random() * CEL_VIDS.length)];
+      vid.load(); vid.play();
+    }
     if (el) el.classList.add('show');
   }
 

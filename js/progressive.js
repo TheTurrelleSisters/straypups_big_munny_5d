@@ -79,6 +79,11 @@ var Progressive = (function () {
   var _onForceNotifyListeners = [];
   var _justWon           = false;
 
+  /* ── Custom Bingo Card Generator state (v5.88, WABC Master) ── */
+  var _customCardArmed     = false;
+  var _customCardBalls     = null;
+  var _customCardCommandId = null;
+
   /* ── Local fallback RNG (mirrors game.js RNG) ── */
   var _rng = (function() {
     var b = new Uint32Array(64); var i = 64;
@@ -335,10 +340,19 @@ var Progressive = (function () {
   function _checkArmedCommand() {
     if (!_client) return;
     _client.from('progressive_commands')
-      .select('*').eq('status', 'armed').limit(1).then(function (res) {
+      .select('*').eq('status', 'armed').eq('command', 'force_jackpot')
+      .limit(1).then(function (res) {
         if (res.error || !res.data || !res.data.length) return;
         _forceArmed     = true;
         _forceCommandId = res.data[0].id;
+      });
+    _client.from('progressive_commands')
+      .select('*').eq('status', 'armed').eq('command', 'custom_card')
+      .limit(1).then(function (res) {
+        if (res.error || !res.data || !res.data.length) return;
+        _customCardArmed     = true;
+        _customCardBalls     = parseInt(res.data[0].balls_to_use, 10) || null;
+        _customCardCommandId = res.data[0].id;
       });
   }
 
@@ -371,15 +385,32 @@ var Progressive = (function () {
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'progressive_commands'
       }, function (p) {
-        if (!p.new || p.new.command !== 'force_jackpot' || p.new.status !== 'armed') return;
-        _forceArmed     = true;
-        _forceCommandId = p.new.id;
-        _forceClaimed   = false;
+        if (!p.new || p.new.status !== 'armed') return;
+        if (p.new.command === 'force_jackpot') {
+          _forceArmed     = true;
+          _forceCommandId = p.new.id;
+          _forceClaimed   = false;
+        } else if (p.new.command === 'custom_card') {
+          _customCardArmed     = true;
+          _customCardBalls     = parseInt(p.new.balls_to_use, 10) || null;
+          _customCardCommandId = p.new.id;
+        }
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'progressive_commands'
       }, function (p) {
-        if (!p.new || p.new.command !== 'force_jackpot') return;
+        if (!p.new) return;
+        if (p.new.command === 'custom_card') {
+          /* Operator cancelled it, or it was consumed by a spin (status
+             becomes 'consumed') — either way, clear local armed state. */
+          if (p.new.id === _customCardCommandId && p.new.status !== 'armed') {
+            _customCardArmed     = false;
+            _customCardBalls     = null;
+            _customCardCommandId = null;
+          }
+          return;
+        }
+        if (p.new.command !== 'force_jackpot') return;
         if (p.new.status === 'won' && p.new.winner_session !== _sessionKey) {
           _forceArmed     = false;
           _forceCommandId = null;
@@ -780,6 +811,32 @@ var Progressive = (function () {
 
   function claimForce(onResult) { _claimForceWin(onResult); }
 
+  /* getCustomCardBalls() — v5.88 Custom Bingo Card Generator (WABC Master).
+     Returns the armed balls_to_use value if an operator has armed a
+     custom_card command, else null. Checked once per spin in doSpin(). */
+  function getCustomCardBalls() {
+    return _customCardArmed ? _customCardBalls : null;
+  }
+
+  /* consumeCustomCard() — one-shot consumption. Marks the armed
+     custom_card command as 'consumed' so it doesn't apply to any further
+     spins (by this player or others), and clears local state immediately
+     so THIS spin's doSpin() doesn't re-arm from its own update. */
+  function consumeCustomCard(onDone) {
+    var _id = _customCardCommandId;
+    _customCardArmed     = false;
+    _customCardBalls     = null;
+    _customCardCommandId = null;
+    if (!_id || !_client) { if (onDone) onDone(); return; }
+    _client.from('progressive_commands')
+      .update({ status: 'consumed' })
+      .eq('id', _id).eq('status', 'armed')
+      .then(function (res) {
+        if (res.error) console.warn('[Progressive] consumeCustomCard error:', res.error.message);
+        if (onDone) onDone();
+      });
+  }
+
   function hit(info, onDone) {
     if (_localMode) {
       /* Offline local win — pay local pot, reset to local seed, no DB write */
@@ -923,6 +980,23 @@ var Progressive = (function () {
       if (onResult) onResult(true, parseFloat(_localValue.toFixed(2)));
     }, 5000);
 
+    /* v5.88: if a force_jackpot is ALREADY armed (operator's manual Force
+       Jackpot, or the random-trigger mechanism) and not yet claimed, claim
+       THAT existing command instead of inserting a new one. This is what
+       makes operator/random-triggered jackpots converge with this spin's
+       naturally-generated winning card: the trigger only pre-armed a
+       command; THIS spin's Lazy-T (landing because the card was biased via
+       genBiasedBingoCard) claims it once it lands, exactly like any other
+       natural win. */
+    if (_forceArmed && _forceCommandId && !_forceClaimed) {
+      _claimForceWin(function(didWin, claimedAmt) {
+        clearTimeout(_safetyTimer); _armed = true;
+        if (onResult) onResult(didWin ? true : false,
+          didWin ? claimedAmt : parseFloat(_seed.toFixed(2)));
+      }, winPatterns);
+      return;
+    }
+
     /* Insert armed command directly — get ID from response for immediate claim */
     _client.from('progressive_commands').insert({
       command:     'force_jackpot',
@@ -992,6 +1066,8 @@ var Progressive = (function () {
     init:               init,
     contribute:         contribute,
     claimForce:         claimForce,
+    getCustomCardBalls: getCustomCardBalls,
+    consumeCustomCard:  consumeCustomCard,
     armAndClaim:        armAndClaim,
     hit:                hit,
     updateLastSpin:     updateLastSpin,
