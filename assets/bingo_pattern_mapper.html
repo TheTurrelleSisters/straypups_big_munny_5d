@@ -203,27 +203,37 @@ body{padding-bottom:80px}
 // Free space = cell 12 (row2,col2=N). All patterns editable in-tool.
 
 var DEFAULT_PATTERNS = [
-  { name:'Corporal Stripes',  balls:27, pay:[800,1600,2500],  cells:[2,6,7,8,10,11,12,13,14,15,19] },
-  { name:'Double Cross',      balls:23, pay:[80,160,240],     cells:[2,6,7,8,12,16,17,18,22] },
-  { name:'G Flat',            balls:34, pay:[40,80,120],      cells:[2,3,4,7,12,15,16,17,20,21,22] },
-  { name:'Christmas Tree',    balls:37, pay:[25,50,75],       cells:[2,6,7,8,10,11,12,13,14,17,22] },
-  { name:'Private Stripes',   balls:28, pay:[12,24,38],       cells:[1,3,6,8,11,13,16,18,21,23] },
-  { name:'Baby Buggy',        balls:27, pay:[10,20,30],       cells:[8,10,11,12,13,15,16,17,18,21,23] },
-  { name:'Small Diamond',     balls:36, pay:[5,10,15],        cells:[7,11,12,13,17] },
-  { name:'EII',               balls:37, pay:[4,8,12],         cells:[0,5,10,15,20,21,22,23,24] },
-  { name:'Open Diamond',      balls:40, pay:[2,4,6],          cells:[2,10,14,22] },
-  { name:'Pyramid',           balls:27, pay:[160,320,480],    cells:[12,16,17,18,20,21,22,23,24] },
-  { name:'Arrowhead',         balls:28, pay:[80,160,240],     cells:[2,6,7,8,10,12,14,17,22] },
-  { name:'Valentine',         balls:36, pay:[50,100,150],     cells:[1,3,5,6,7,8,9,10,11,12,13,14,16,17,18,22] },
-  { name:'Tee',               balls:38, pay:[20,40,60],       cells:[0,1,2,3,4,7,12,17,22] },
-  { name:'Stepladder',        balls:36, pay:[10,20,30],       cells:[4,8,9,12,13,16,17,20,21] },
-  { name:'Poodle Dog',        balls:35, pay:[20,40,60],       cells:[0,1,5,6,7,11,13,14,16,18,19,21] },
-  { name:'Hopscotch',         balls:39, pay:[10,20,30],       cells:[1,3,7,11,13,15,17,21,23] },
-  { name:'Cross Corners',     balls:27, pay:[320,640,960],    cells:[0,4,5,7,9,12,15,17,19,20,24] },
-  { name:'The Kite',          balls:34, pay:[160,320,480],    cells:[0,1,2,3,5,6,7,10,11,15,19,24] },
-  { name:'Four Leaf Clover',  balls:34, pay:[100,200,300],    cells:[0,1,5,6,3,4,8,9,15,16,20,21,18,19,23,24] },
-  { name:'Hot Dog',           balls:39, pay:[40,80,120],      cells:[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19] },
-  { name:'Make Cents',        balls:29, pay:[40,80,120],      cells:[2,6,7,8,11,12,16,17,18,22] }
+  // ── JACKPOT ──────────────────────────────────────────────────────────────
+  { name:'Corporal Stripes',    balls:27, pay:[800,1600,2500],  cells:[2,6,7,8,10,11,12,13,14,15,19] },
+
+  // ── HIGH PAYS ────────────────────────────────────────────────────────────
+  { name:'Cross Corners',       balls:29, pay:[320,640,960],    cells:[0,4,7,11,12,13,17,20,24] },
+  { name:'Pyramid',             balls:29, pay:[160,320,480],    cells:[12,16,17,18,20,21,22,23,24] },
+  { name:'The Kite',            balls:35, pay:[160,320,480],    cells:[0,1,2,5,6,7,10,11,12,18,24] },
+  { name:'Double Cross',        balls:28, pay:[80,160,240],     cells:[2,6,7,8,12,16,17,18,22] },
+  { name:'Arrowhead',           balls:30, pay:[80,160,240],     cells:[2,6,7,8,10,12,14,17,22] },
+  { name:'G Flat',              balls:36, pay:[40,80,120],      cells:[2,3,4,7,12,15,16,17,20,21,22] },
+  { name:'Make Cents',          balls:29, pay:[40,80,120],      cells:[2,6,7,8,11,12,16,17,18,22] },
+  { name:'Four Leaf Clover',    balls:34, pay:[100,200,300],    cells:[1,5,6,7,11,13,17,18,19,23] },
+  { name:'Valentine',           balls:37, pay:[50,100,150],     cells:[4,6,8,10,12,14,16,18,20,22] },
+
+  // ── MID PAYS ─────────────────────────────────────────────────────────────
+  { name:'Tee',                 balls:38, pay:[20,40,60],       cells:[0,1,2,3,4,7,12,17,22] },
+  { name:'Poodle Dog',          balls:35, pay:[20,40,60],       cells:[0,1,6,11,12,13,14,16,18,21,23] },
+  { name:'Christmas Tree',      balls:38, pay:[25,50,75],       cells:[2,6,7,8,10,11,12,13,14,17,22] },
+  { name:'Private Stripes',     balls:30, pay:[12,24,38],       cells:[2,6,8,10,14] },
+  { name:'Stepladder',          balls:36, pay:[10,20,30],       cells:[4,7,8,12,15,16,20] },
+  { name:'Hopscotch',           balls:38, pay:[10,20,30],       cells:[1,3,7,11,13,17,21,23] },
+  { name:'Baby Buggy',          balls:35, pay:[10,20,30],       cells:[3,4,8,10,11,12,13,15,16,17,18,21,23] },
+
+  // ── LOW PAYS ─────────────────────────────────────────────────────────────
+  { name:'Small Diamond',       balls:38, pay:[5,10,15],        cells:[7,11,12,13,17] },
+  { name:'EII',                 balls:38, pay:[4,8,12],         cells:[0,5,10,15,20,21,22,23,24] },
+  { name:'Open Diamond',        balls:38, pay:[2,4,6],          cells:[2,10,12,14,22] },
+
+  // ── PROGRESSIVE JACKPOT ──────────────────────────────────────────────────
+  // Cover All in <=25 balls. Awards WAP pot. Display only — pay shown as WAP.
+  { name:'Progressive Jackpot', balls:25, pay:[0,0,0],          cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], isProgressive:true }
 ];
 
 var REELS = [
@@ -249,7 +259,8 @@ var REELS = [
   { id:'sp1b', name:'SP + SINGLE BAR',    sub:'STRAYPUP + 1 BAR',     pay:'varies'        },
   { id:'sp2b', name:'SP + DOUBLE BAR',    sub:'STRAYPUP + 2 BAR',     pay:'varies'        },
   { id:'spspch', name:'SP+SP+CHERRY',      sub:'WILD ×4 CHERRY',       pay:'varies'        },
-  { id:'spchch', name:'SP+CHERRY+CHERRY',  sub:'WILD ×2 CHERRY',       pay:'varies'        }
+  { id:'spchch',   name:'SP+CHERRY+CHERRY',      sub:'WILD ×2 CHERRY',            pay:'varies'        },
+  { id:'coverall', name:'3× PROGRESSIVE',        sub:'WIDE AREA PROGRESSIVE JP',  pay:'WAP POT'       }
 ];
 
 var COLS = ['B','I','N','G','O'];
@@ -294,7 +305,7 @@ function buildCards() {
     info.className = 'pc-info';
     info.innerHTML =
       '<div class="pc-name">'+pat.name+'</div>'+
-      '<div class="pc-meta">'+pat.balls+' BALLS &nbsp;|&nbsp; '+pat.cells.length+' CELLS</div>';
+      '<div class="pc-meta">'+pat.balls+' BALLS &nbsp;|&nbsp; '+pat.cells.length+' CELLS'+(pat.isProgressive?' &nbsp;|&nbsp; <span style="color:#ffd700">★ WAP</span>':'')+' </div>';
     var badge = document.createElement('div');
     badge.className = 'pc-badge'; badge.id = 'badge'+pi;
     badge.textContent = selections[pat.name]
@@ -427,9 +438,14 @@ function buildEditPanel(pi, body) {
   side.innerHTML =
     '<div class="gs-label">PAYOUTS</div>'+
     '<div class="pay-rows">'+
-      '<div class="pay-b">BET 1 → $'+pat.pay[0]+'</div>'+
-      '<div class="pay-b">BET 2 → $'+pat.pay[1]+'</div>'+
-      '<div class="pay-b">BET 3 → $'+pat.pay[2]+'</div>'+
+      (pat.isProgressive
+        ? '<div class="pay-b" style="color:#ffd700">★ WIDE AREA PROGRESSIVE ★</div>'+
+          '<div class="pay-b">Cover All in ≤25 Balls</div>'+
+          '<div class="pay-b">Awards WAP Pot Value</div>'
+        : '<div class="pay-b">BET 1 → $'+pat.pay[0]+'</div>'+
+          '<div class="pay-b">BET 2 → $'+pat.pay[1]+'</div>'+
+          '<div class="pay-b">BET 3 → $'+pat.pay[2]+'</div>'
+      )+
     '</div>'+
     '<div class="cell-count">Cells lit: <strong>'+pat.cells.length+'</strong></div>';
 
@@ -608,9 +624,29 @@ function saveState() {
 
 function loadState() {
   // First load pre-saved screenshot data as baseline
-  var baseline = {"Corporal Stripes": "jp", "Double Cross": "7", "G Flat": "3b", "Christmas Tree": "2b", "Private Stripes": "1b", "Baby Buggy": "ch3", "Small Diamond": "mb", "EII": "ch2", "Open Diamond": "ch1", "Pyramid": "7w2", "Arrowhead": "3bw2", "Valentine": "2bw2", "Tee": "1bw2", "Stepladder": "spmb", "Hopscotch": "spch", "Cross Corners": "7w4", "The Kite": "3bw4", "Four Leaf Clover": "2bw4", "Hot Dog": "1bw4",
-    "Poodle Dog": "spspch",
-    "Make Cents": "spchch"};
+  var baseline = {
+    "Corporal Stripes":   "jp",
+    "Cross Corners":      "7w4",
+    "Pyramid":            "7w2",
+    "The Kite":           "3bw4",
+    "Double Cross":       "7",
+    "Arrowhead":          "3bw2",
+    "G Flat":             "3b",
+    "Make Cents":         "spchch",
+    "Four Leaf Clover":   "2bw4",
+    "Valentine":          "2bw2",
+    "Tee":                "1bw2",
+    "Poodle Dog":         "spspch",
+    "Christmas Tree":     "2b",
+    "Private Stripes":    "1b",
+    "Stepladder":         "spmb",
+    "Hopscotch":          "spch",
+    "Baby Buggy":         "ch3",
+    "Small Diamond":      "mb",
+    "EII":                "ch2",
+    "Open Diamond":       "ch1",
+    "Progressive Jackpot":"coverall"
+  };
   // Try localStorage override
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
