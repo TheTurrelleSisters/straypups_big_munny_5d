@@ -611,3 +611,207 @@ empty and let us apply the real fix.
   END; $$;
   GRANT EXECUTE ON FUNCTION public.touch_player_last_seen(text) TO anon, authenticated;
 
+
+
+### v5.85 — Progressive Symbol Replacement, Free Space Color, Reel Reshuffle, Ball-Call Freeze (Item 7), Celebration/Attitude Check CSS (Item 6), Pattern Cycling (Item 4), Winner Records
+- **Progressive Jackpot symbol replaced**: New artwork (DJ-pup "PROGRESSIVE
+  JACKPOT" mascot, user-supplied), background removed (flood-fill + isolated
+  artifact cleanup), cropped to 863x1023, resized to 320x379, saved as
+  assets/symbols/progressive_jackpot.png. Old assets/symbols/stray_pup_progressive.svg
+  DELETED (fully replaced, no frame/border/separate text banner — blank
+  canvas). game.js's IMG_PROG_JP preload updated to the new PNG path.
+  Renders via existing mkSym id===7 -> object-fit:contain, no markup changes
+  needed.
+- **Free Space color fixed to blue**: .bc.free and .bc.free.daubed changed
+  from gold gradient to the same blue gradient as .bc.daubed (#2255cc-#0033aa),
+  text color changed from dark to light. Free space is always shown as
+  daubed, so it should match daubed styling, not the un-daubed gold.
+- **Reel strips reshuffled (no adjacent duplicates)**: All 3 STRIPS arrays in
+  js/config.js reshuffled so the 50-symbol subsequence (even indices) has
+  ZERO adjacent duplicates, circularly. Per-reel symbol counts preserved
+  exactly. STRIPS is purely visual (above2/below2 "ghost" symbols next to
+  the landing symbol) -- no effect on odds/RTP (VIRTUAL_STOP_TABLE /
+  forcedSpinResult unchanged).
+
+- **ITEM 7 FIX -- Ball-call freeze at ball 41 (ROOT CAUSE FOUND, CONFIRMED
+  on v5.84)**: _handleCoverAll(true) (the progressive Cover-All-1-to-40
+  setup, called from animateReels' callback) unconditionally called
+  stopActiveCaller(), and NOTHING ever restarted it for Red Spin's balls
+  41-75. The v5.81 !seqExhausted guard alone could not fix this -- even
+  when the guard correctly prevented a second _handleCoverAll(false) call,
+  _handleCoverAll(true) itself still stopped the caller with no restart path.
+  TWO-PART FIX in js/game.js (both games):
+    1. _continueSpinAfterClaim now sets BG.seqExhausted=true IMMEDIATELY
+       (based on BG._coverAll1to40, already known synchronously from
+       doBingoSpin) BEFORE calling startActiveCaller() -- closes the race
+       where the first entertainment tick (~3.2s) could fire before
+       _handleCoverAll(true) runs (animateReels' callback timing varies).
+    2. _handleCoverAll(hasPenny) now only calls stopActiveCaller() when
+       !hasPenny. For progressive spins (hasPenny=true), the active caller
+       keeps running through Red Spin's balls 41-75; the seqExhausted guard
+       in _activeCallNext prevents re-triggering _handleCoverAll(false).
+       Non-progressive entertainment-phase cover-all (hasPenny=false)
+       still freezes as designed (v5.40 behavior unchanged).
+
+- **ITEM 6 FIX -- Celebration video / Attitude Check never appeared (ROOT
+  CAUSE: missing CSS entirely)**: #force-win-cel and #attitude-check had
+  ZERO CSS anywhere -- no display/position/z-index rules, so .classList.add
+  ('show') did nothing visually. showProgJP and showAttitudeCheck were both
+  firing correctly in JS; the overlays were just invisible/inert divs.
+  Added full fullscreen-overlay CSS for both (css/styles.css, both games):
+  fixed position, high z-index (250 / 240), flex-centered, #fw-video as a
+  cover background behind text, gold/crimson text styling matching the
+  existing #jp-ov jackpot popup, styled dismiss buttons.
+
+- **ITEM 4 -- On-screen pattern cycling (resolved as a consequence of Item
+  6)**: startPatternCycle(winPatterns) in showProgJP's onDismiss was already
+  correctly designed to cycle through ALL achieved patterns every 2s -- it
+  just never ran because onDismiss was unreachable (invisible dismiss
+  button, per Item 6). No code change needed beyond the Item 6 CSS fix;
+  verified no other stopPatternCycle() call interferes during Red
+  Spin/celebration.
+
+- **Winner name + real pattern names now recorded for every jackpot hit**:
+  _claimForceWin (js/progressive.js, both games) previously HARDCODED
+  pattern='Force Jackpot' and win_patterns='Force Jackpot' for EVERY hit,
+  natural or forced -- Progressive Operator's "Last Hit"/history UI already
+  displays these fields (win_patterns||pattern, player_label) but always
+  showed the generic label. Now:
+    - armAndClaim(winPatterns, onResult) -- new winPatterns param, passed
+      through to _claimForceWin for natural Lazy-T wins (game.js's
+      armAndClaim call site updated to pass winPatterns).
+    - _claimForceWin(onClaimed, winPatterns) -- if winPatterns provided,
+      records the real progressive pattern name (e.g. "Lazy-T") as
+      `pattern` and ALL achieved pattern names joined as `win_patterns`.
+      Genuine operator-forced jackpots (claimForce() called directly,
+      before winPatterns exists for that spin) keep 'Force Jackpot' --
+      accurate description of how that hit was triggered.
+    - player_label continues to use _playerNickname||_playerLabel||_sessionKey.
+  No UI changes needed in Progressive Operator -- it already reads these
+  fields correctly.
+
+- **Attitude Check now shows WHO won + how much**: progressive_commands
+  gets a new `winner_label` column (SQL migration, see below), set by
+  _claimForceWin alongside winner_session/winner_game/winner_amt.
+  _subscribeCommands' UPDATE handler passes winner_label to
+  onForceNotify listeners (3rd arg). showAttitudeCheck(amt, winnerGame,
+  winnerLabel) (index.html inline script, both games) now populates a new
+  #ac-winner element: "<name> Just Won The Progressive Jackpot!" (fixed a
+  pre-existing duplicate #ac-sub id in the same edit -- second instance
+  renamed #ac-sub2).
+
+  REQUIRED SQL (run once in Supabase SQL Editor, BEFORE deploying v5.85):
+  ALTER TABLE progressive_commands ADD COLUMN IF NOT EXISTS winner_label text;
+
+- **Item 3 (operator-forced jackpots not recorded as a win/in history)**:
+  root cause is the SAME as Item 6 -- onDismiss (which fires the opLog/
+  game_history write with isProgressive/progAmount/patterns, AND the
+  progressive_hits insert via _claimForceWin) never ran because the
+  celebration overlay was invisible/undismissable, for BOTH natural and
+  operator-forced wins. The Item 6 CSS fix applies equally to the forced
+  path (_progPat._forceAmt branch -> same _finishProgressiveSpin ->
+  runRS -> showProgJP -> onDismiss chain). No separate code change
+  identified as additionally needed; please re-test operator-forced
+  jackpots after this deploy and report back if still not recording.
+
+- **DEAD CODE REMOVED**:
+    - showForceWin / Progressive.onForceWin (index.html inline script +
+      js/progressive.js): _onForceWinListeners was populated but NEVER
+      fired anywhere -- the real winner celebration is showProgJP via
+      game.js, called directly. Removed showForceWin(), CEL_VIDEOS/_celIdx,
+      the onForceWin registration call, and onForceWin/_onForceWinListeners
+      from progressive.js's exports entirely.
+    - _subscribeHits' notify loop (js/progressive.js): now redundant --
+      ALL real hits go through armAndClaim -> _claimForceWin, which updates
+      progressive_commands (status='won') BEFORE the progressive_hits row
+      is inserted; _subscribeCommands' UPDATE handler already notifies
+      other players (with real pattern names + winner_label) for every
+      hit. Disabled (always returns) to avoid a duplicate Attitude Check
+      popup. Subscription left registered but inert, in case
+      progressive_hits INSERT-based logic is needed again later.
+
+- **ORPHANED DUPLICATE FILES DELETED** (root-level copies superseded by
+  js/ versions, confirmed unreferenced by index.html <script> tags AND
+  absent from the service-worker FILES cache list):
+    - /game.js (root) -- index.html loads js/game.js
+    - /progressive.js (root) -- index.html loads js/progressive.js; was
+      uselessly cached, now removed from FILES too
+    - /js/broadcast-init.js -- index.html loads root /broadcast-init.js
+  GitHub still has these files from before this zip upload -- see
+  GITHUB CLEANUP list (provided separately to Sasha) for the full set of
+  files to delete manually from both repos (uploading a zip does not
+  delete files).
+
+- **service-worker.js FILES list fixed**: removed the now-deleted
+  stray_pup_progressive.svg (would have made cache.addAll() fail entirely
+  on next install/update -- it's atomic) and the now-removed root
+  progressive.js; added assets/symbols/progressive_jackpot.png.
+
+- Cache bust: spbm-v585. Splash/title version updated to v5.85.
+
+
+### v5.86 — Random Trigger Odds wired up (must-hit-by-ceiling)
+- **"Random Trigger Odds" setting (Progressive Operator) is now wired up**.
+  Previously stored in the `progressive` table (column trigger_odds,
+  default 500, UI label "1-in-N spins at seed (increases toward cap)") but
+  NEVER READ by either game -- pure dead setting. Now:
+    - js/progressive.js (both games): new _triggerOdds var, fetched in
+      _fetchRow and kept current via _subscribeValue's UPDATE handler
+      (same pattern as _seed/_ceiling/_contribRate).
+    - contribute(betAmt) (called once per spin): if no force is currently
+      armed and _triggerOdds>0 and ceiling>seed, rolls a random check each
+      spin with odds interpolated linearly from 1-in-_triggerOdds when the
+      pot is at seed to guaranteed (1-in-1) once the pot reaches the
+      must-hit ceiling:
+        progress = clamp((value-seed)/(ceiling-seed), 0, 1)
+        chance   = (1/triggerOdds) + progress * (1 - 1/triggerOdds)
+    - On success, new _armRandomTrigger() inserts a force_jackpot/'armed'
+      row into progressive_commands with created_by='random_trigger' --
+      the SAME mechanism the operator's manual Force Jackpot button uses.
+      _subscribeCommands' existing INSERT handler picks this up for all
+      connected clients exactly like an operator-armed command; takes
+      effect starting the next spin (current spin's _forceJP was already
+      evaluated before the async insert resolves).
+    - Race safety: if _forceArmed becomes true from elsewhere (operator,
+      natural Lazy-T armAndClaim, or another client's random trigger)
+      while our insert is in flight, the newly-inserted row is immediately
+      cancelled (status='cancelled') so it doesn't sit as an orphaned
+      'armed' command.
+  No Progressive Operator UI changes needed -- the existing "Random
+  Trigger Odds" input already reads/writes the column this consumes.
+
+  PRECAUTIONARY SQL (no-op if column already exists, run before deploy):
+  ALTER TABLE progressive ADD COLUMN IF NOT EXISTS trigger_odds numeric DEFAULT 500;
+
+- **Lazy-T pattern corrected in conversation/docs (no code change)**: cells
+  [4,9,10,11,12,13,14,19,24] = the full O column (5 cells, incl. free
+  space at 12) + the middle-row B/I/G cells (3 cells) = 8 numbers needed
+  in the first 25 balls. Earlier description (N column + bottom row) was
+  backwards -- code/config unaffected, this is just a documentation
+  correction. Natural odds unchanged: ~1-in-15,599 per spin
+  (C(67,17)/C(75,25)), independent of any operator action -- confirmed
+  the natural armAndClaim(winPatterns,...) path is fully wired (same path
+  fixed in v5.85).
+
+- Cache bust: spbm-v586. Splash/title version updated to v5.86.
+
+
+### v5.87 — Friendly game-name update (Stray Pups / Turrelle Sisters)
+- PROG_GAME_TITLES (js/progressive.js): 'StrayPups Big Munny $1'/'$5' ->
+  'Stray Pups Big Munny $1'/'$5'; 'turrelle': 'Turrelle Sisters' ->
+  'The Turrelle Sisters Big Munny'. These feed game_title in
+  progressive_hits/progressive_commands records and the Attitude Check
+  "Won on <game>" display.
+- _writeGameHistory's hardcoded _gameTitle (js/game.js) updated to match
+  ('Stray Pups Big Munny $1'/'$5') -- feeds game_history.game_title, shown
+  in Floor Manager.
+- In-game <title>/#splash-ver branding ("StrayPups Big Munny vX.XX")
+  UNCHANGED -- this rename is for cross-repo "friendly name" displays in
+  the operator tools / hit records only, not the game's own branding.
+- Companion changes this release: progressive_operator v3.21 (same
+  PROG_GAME_TITLES rename), floor_manager v1.10 (GAMES map renamed + new
+  'turrelle' entry so The Turrelle Sisters Big Munny / TSBIGMUNNY shows up
+  correctly wherever Floor Manager displays per-game names), tsbigmunny
+  v8.2.2 (same PROG_GAME_TITLES rename + new presence fix -- see
+  tsbigmunny/PHASE_PLAN.md).
+- Cache bust: spbm-v587. Splash/title version updated to v5.87.

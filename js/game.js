@@ -274,7 +274,7 @@ function _writeGameHistory(rec) {
   }
   var _denom = (typeof DENOM !== 'undefined' ? DENOM : 1);
   var _gameId = (typeof PROG_GAME_ID !== 'undefined') ? PROG_GAME_ID : 'straypups_1d';
-  var _gameTitle = _gameId === 'straypups_5d' ? 'StrayPups Big Munny $5' : 'StrayPups Big Munny $1';
+  var _gameTitle = _gameId === 'straypups_5d' ? 'Stray Pups Big Munny $5' : 'Stray Pups Big Munny $1';
   var row = {
     game_id:       _gameId,
     game_title:    _gameTitle,
@@ -679,8 +679,15 @@ function _handleCoverAll(hasPenny){
   /* v5.40: Stop caller and freeze — new sequence is picked up on next spin press.
      Wide area: player re-syncs to WABC live position on spin.
      Local: doBingoSpin() generates new sequence on spin press.
-     Do NOT fetch or generate a new sequence here. */
-  stopActiveCaller();
+     Do NOT fetch or generate a new sequence here.
+     v5.85: This only applies to a genuine entertainment-phase cover-all
+     (hasPenny=false, balls 41-75 reached full cover-all on a normal spin) —
+     freeze until the next spin, as designed. For the progressive
+     Cover-All-1-to-40 setup (hasPenny=true), the active caller MUST keep
+     running so Red Spin's balls 41-75 continue calling; the seqExhausted
+     guard in _activeCallNext (now set BEFORE this point, see
+     _continueSpinAfterClaim) prevents this function from re-firing. */
+  if(!hasPenny) stopActiveCaller();
   BG.seqExhausted=true;
   updateBallCallBadge();
   /* Cover All — request new sequence for all players */
@@ -1003,7 +1010,7 @@ var SVG={
   6:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="#f8f4e8"/></svg>'
 };
 var IMG_PROG_JP=(function(){
-  var i=new Image();i.src='assets/symbols/stray_pup_progressive.svg';
+  var i=new Image();i.src='assets/symbols/progressive_jackpot.png';
   i.style.cssText='width:95%;height:95%;object-fit:contain;display:block;';
   return i;
 }());
@@ -1433,6 +1440,14 @@ function doSpin(){
   // claimForce() is async — BOTH didWin=true AND didWin=false paths call it.
   // FIXES: lockup, wrong toast, wrong amount, double-credit, pot not resetting.
   function _continueSpinAfterClaim(){
+    /* v5.85: For a progressive (Cover-All-1-to-40) spin, mark seqExhausted
+       BEFORE starting the active caller — _handleCoverAll(true) won't run
+       until animateReels' callback fires (variable timing), but the active
+       caller's first tick can fire as early as ~3.2s. Without this, on a
+       slow/long spin animation the first tick could land BEFORE
+       _handleCoverAll(true) sets seqExhausted, re-triggering
+       _handleCoverAll(false) prematurely (see _activeCallNext guard below). */
+    if(BG._coverAll1to40) BG.seqExhausted=true;
     if(!BG.entTimer) startActiveCaller();
     var spinData;
     if(winPatterns.length===0){
@@ -1519,7 +1534,7 @@ function doSpin(){
              Player 1 gets full pot, Player 2 gets seed amount.
              Both pay via the same sequential award flow + celebration.
              Progressive.hit() never called — DB is sole payment authority. */
-          Progressive.armAndClaim(function(didWin, _progAmt) {
+          Progressive.armAndClaim(winPatterns, function(didWin, _progAmt) {
             _finishProgressiveSpin(_progAmt+_allPatsBonus, winPatterns,
                                     basePat, _spinCardSerial, _spinBalBefore);
           });

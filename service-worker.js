@@ -1,4 +1,4 @@
-var CACHE = 'spbm-v584';
+var CACHE = 'spbm-v587';
 var FILES = [
   './',
   './index.html',
@@ -7,12 +7,11 @@ var FILES = [
   './js/game.js',
   './js/operator.js',
   './js/progressive.js',
-  './progressive.js',
   './wabc.js',
   './broadcast-init.js',
   './assets/splash.jpg',
   './assets/banner.jpg',
-  './assets/symbols/stray_pup_progressive.svg',
+  './assets/symbols/progressive_jackpot.png',
   './icon-192.png',
   './icon-512.png',
   './assets/credits_addup.wav',

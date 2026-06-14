@@ -24,9 +24,9 @@ var PROG_DENOM   = (typeof PROG_DENOM   !== 'undefined') ? PROG_DENOM   : 1.00;
 
 /* Game title map for hit records */
 var PROG_GAME_TITLES = {
-  'straypups_1d': 'StrayPups Big Munny $1',
-  'straypups_5d': 'StrayPups Big Munny $5',
-  'turrelle':     'Turrelle Sisters',
+  'straypups_1d': 'Stray Pups Big Munny $1',
+  'straypups_5d': 'Stray Pups Big Munny $5',
+  'turrelle':     'The Turrelle Sisters Big Munny',
   'unknown':      'Unknown Game'
 };
 
@@ -39,6 +39,7 @@ var Progressive = (function () {
   var _seed              = 500.00;
   var _ceiling           = 9999.00;
   var _contribRate       = 0.02;
+  var _triggerOdds       = 500;   /* "1-in-N at seed" -> scales toward guaranteed at ceiling */
   var _pendingAdd        = 0;
   var _flushTimer        = null;
   var _valueListeners    = [];
@@ -75,7 +76,6 @@ var Progressive = (function () {
   var _forceArmed        = false;
   var _forceCommandId    = null;
   var _forceClaimed      = false;
-  var _onForceWinListeners = [];
   var _onForceNotifyListeners = [];
   var _justWon           = false;
 
@@ -320,6 +320,7 @@ var Progressive = (function () {
       _seed        = parseFloat(d.seed)         || _seed;
       _ceiling     = parseFloat(d.ceiling)      || _ceiling;
       _contribRate = parseFloat(d.contrib_rate) || _contribRate;
+      _triggerOdds = parseFloat(d.trigger_odds) || _triggerOdds;
       /* If we were in local mode and DB is now responding, go back online */
       if (_localMode) _goOnlineMode();
       _notifyValue();
@@ -354,6 +355,7 @@ var Progressive = (function () {
         _seed        = parseFloat(p.new.seed)         || _seed;
         _ceiling     = parseFloat(p.new.ceiling)      || _ceiling;
         _contribRate = parseFloat(p.new.contrib_rate) || _contribRate;
+        _triggerOdds = parseFloat(p.new.trigger_odds) || _triggerOdds;
         _notifyValue();
       }).subscribe();
   }
@@ -382,8 +384,9 @@ var Progressive = (function () {
           _forceArmed     = false;
           _forceCommandId = null;
           var _wGameTitle = PROG_GAME_TITLES[p.new.winner_game] || p.new.winner_game || 'another game';
+          var _wWinnerLabel = p.new.winner_label || 'A player';
           for (var _wi=0; _wi<_onForceNotifyListeners.length; _wi++) {
-            try { _onForceNotifyListeners[_wi](parseFloat(p.new.winner_amt) || 0, _wGameTitle); } catch(e) {}
+            try { _onForceNotifyListeners[_wi](parseFloat(p.new.winner_amt) || 0, _wGameTitle, _wWinnerLabel); } catch(e) {}
           }
         }
         /* Operator cancelled the armed jackpot before anyone claimed it —
@@ -403,15 +406,16 @@ var Progressive = (function () {
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'progressive_hits'
       }, function (p) {
-        if (!p.new || _justWon) return;
-        /* Force jackpot wins are already announced via the
-           progressive_commands UPDATE handler above — skip here
-           to avoid showing the Attitude Check popup twice. */
-        if (p.new.pattern === 'Force Jackpot') return;
-        var _hGameTitle = PROG_GAME_TITLES[p.new.game_id] || p.new.game_id || 'another game';
-        for (var _hi=0; _hi<_onForceNotifyListeners.length; _hi++) {
-          try { _onForceNotifyListeners[_hi](parseFloat(p.new.amount) || 0, _hGameTitle); } catch(e) {}
-        }
+        /* v5.85: ALL real hits now go through armAndClaim -> _claimForceWin,
+           which updates progressive_commands (status='won') BEFORE this
+           progressive_hits row is even inserted — _subscribeCommands' UPDATE
+           handler above already notifies other players (with the real
+           pattern names + winner_label) for every hit, natural or forced.
+           This listener is now redundant for notification purposes and is
+           disabled to avoid a duplicate Attitude Check popup. Left in place
+           (rather than removed) in case progressive_hits INSERT-based logic
+           is needed again later. */
+        return;
       }).subscribe();
   }
 
@@ -565,10 +569,30 @@ var Progressive = (function () {
   /* ═══════════════════════════════════════════════════════════════
      FORCE WIN CLAIM (unchanged from v1.3)
      ═══════════════════════════════════════════════════════════════ */
-  function _claimForceWin(onClaimed) {
+  function _claimForceWin(onClaimed, winPatterns) {
     if (!_forceCommandId || _forceClaimed) { onClaimed(false); return; }
     _forceClaimed = true;
     var hitAmt    = parseFloat(_localValue.toFixed(2));
+
+    /* v5.85: derive the actual pattern(s) achieved + winner label for this
+       hit record. If winPatterns is provided (natural Lazy-T win, passed
+       from armAndClaim), record the real patterns. Otherwise (genuine
+       operator-initiated Force Jackpot via claimForce(), called before
+       winPatterns exists for this spin) keep 'Force Jackpot' — that
+       accurately describes how the hit was triggered. */
+    var _winnerLabel = _playerNickname || _playerLabel || _sessionKey;
+    var _patternName, _winPatternsStr;
+    if (winPatterns && winPatterns.length) {
+      _winPatternsStr = winPatterns.map(function(p){return p.name;}).join(', ');
+      var _progP = null;
+      for (var _wpi=0; _wpi<winPatterns.length; _wpi++){
+        if (winPatterns[_wpi].isProgressive){ _progP=winPatterns[_wpi]; break; }
+      }
+      _patternName = (_progP && _progP.name) || 'Lazy-T';
+    } else {
+      _patternName    = 'Force Jackpot';
+      _winPatternsStr = 'Force Jackpot';
+    }
 
     var _safetyTimer = setTimeout(function () {
       _forceClaimed = false; _forceArmed = false; _forceCommandId = null;
@@ -579,6 +603,7 @@ var Progressive = (function () {
       .update({
         status: 'won', winner_session: _sessionKey,
         winner_game: PROG_GAME_ID, winner_amt: hitAmt,
+        winner_label: _winnerLabel,
         won_at: new Date().toISOString()
       })
       .eq('id', _forceCommandId).eq('status', 'armed').select()
@@ -609,13 +634,13 @@ var Progressive = (function () {
               game_id:        PROG_GAME_ID,
               denom:          PROG_DENOM,
               amount:         hitAmt,
-              pattern:        'Force Jackpot',
+              pattern:        _patternName,
               balls:          0,
               bet:            0,
               player_session: _sessionKey,
-              player_label:   _playerNickname || _playerLabel || _sessionKey,
+              player_label:   _winnerLabel,
               game_title:     PROG_GAME_TITLES[PROG_GAME_ID] || PROG_GAME_ID,
-              win_patterns:   'Force Jackpot'
+              win_patterns:   _winPatternsStr
             }).then(function(r) {
               if (r.error) console.warn('[Progressive] _claimForceWin hit insert error:', r.error.message);
             });
@@ -707,7 +732,50 @@ var Progressive = (function () {
       _pendingAdd += addition;
       _scheduleFlush();
     }
+
+    /* v5.86: "Random Trigger Odds" -- must-hit-by-ceiling mechanism.
+       Odds of an automatic random trigger scale from 1-in-_triggerOdds
+       when the pot is at seed, up to guaranteed (1-in-1) once the pot
+       reaches the must-hit ceiling -- independent of whether any
+       player's card naturally hits Lazy-T. Rolled once per spin (here,
+       inside contribute()). On success, arms a force_jackpot command in
+       progressive_commands the same way the operator's manual Force
+       Jackpot button does; takes effect starting next spin once the
+       arm is confirmed (via _subscribeCommands' broadcast or the insert
+       response below). */
+    if (!_forceArmed && _connected && _client && _triggerOdds > 0 && _ceiling > _seed) {
+      var _progress = Math.min(1, Math.max(0, (_localValue - _seed) / (_ceiling - _seed)));
+      var _chance = (1 / _triggerOdds) + _progress * (1 - 1 / _triggerOdds);
+      if (Math.random() < _chance) _armRandomTrigger();
+    }
+
     return _forceArmed;
+  }
+
+  /* Arm a force_jackpot command via the "Random Trigger Odds" mechanism
+     (see contribute() above). Mirrors armAndClaim's arm step but does
+     NOT claim immediately -- the spin currently in progress already
+     evaluated _forceJP before this resolves; the arm is picked up on the
+     player's NEXT spin (by this client or any other) via _forceArmed. */
+  function _armRandomTrigger() {
+    if (_forceArmed || !_client) return;
+    _client.from('progressive_commands').insert({
+      command: 'force_jackpot', status: 'armed',
+      winner_game: PROG_GAME_ID, created_by: 'random_trigger'
+    }).select().then(function (res) {
+      if (res.error || !res.data || !res.data.length) return;
+      var _newId = res.data[0].id;
+      if (_forceArmed) {
+        /* Another arm (operator, natural Lazy-T, or a different client's
+           random trigger) won the race while our insert was in flight --
+           cancel ours so it doesn't sit as an orphaned armed command. */
+        _client.from('progressive_commands').update({ status: 'cancelled' })
+          .eq('id', _newId).eq('status', 'armed').then(function(){});
+        return;
+      }
+      _forceCommandId = _newId;
+      _forceArmed = true; _forceClaimed = false;
+    });
   }
 
   function claimForce(onResult) { _claimForceWin(onResult); }
@@ -828,7 +896,7 @@ var Progressive = (function () {
    *   didWin=false — another player won first, pays seed amount
    * ES5-safe.
    */
-  function armAndClaim(onResult) {
+  function armAndClaim(winPatterns, onResult) {
     if (_localMode) {
       var _localAmt = parseFloat(_localPotValue.toFixed(2));
       _localPotValue = _localPotSeed;
@@ -879,7 +947,7 @@ var Progressive = (function () {
               clearTimeout(_safetyTimer); _armed = true;
               if (onResult) onResult(didWin ? true : false,
                 didWin ? claimedAmt : parseFloat(_seed.toFixed(2)));
-            });
+            }, winPatterns);
           }).catch(function() {
             clearTimeout(_safetyTimer); _armed = true;
             if (onResult) onResult(false, parseFloat(_seed.toFixed(2)));
@@ -893,7 +961,7 @@ var Progressive = (function () {
         clearTimeout(_safetyTimer); _armed = true;
         if (onResult) onResult(didWin ? true : false,
           didWin ? claimedAmt : parseFloat(_seed.toFixed(2)));
-      });
+      }, winPatterns);
     }).catch(function(err) {
       clearTimeout(_safetyTimer); _armed = true;
       console.warn('[Progressive] armAndClaim catch:', err);
@@ -917,7 +985,6 @@ var Progressive = (function () {
   function onChange(fn)         { _valueListeners.push(fn); fn(_localValue); }
   function onPresenceChange(fn) { _presenceListeners.push(fn); fn(_presenceCount); }
   function onMessage(fn)        { _messageListeners.push(fn); }
-  function onForceWin(fn)       { if (typeof fn==='function') _onForceWinListeners.push(fn); }
   function onForceNotify(fn)    { if (typeof fn==='function') _onForceNotifyListeners.push(fn); }
   function onBallCallUpdate(fn) { _ballCallListeners.push(fn); }
 
@@ -948,7 +1015,6 @@ var Progressive = (function () {
     onChange:           onChange,
     onPresenceChange:   onPresenceChange,
     onMessage:          onMessage,
-    onForceWin:         onForceWin,
     onForceNotify:      onForceNotify,
     onBallCallUpdate:   onBallCallUpdate,
     onConnChange:       function(fn) { _connChangeListeners.push(fn); }
