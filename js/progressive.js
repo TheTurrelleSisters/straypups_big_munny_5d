@@ -264,23 +264,41 @@ var Progressive = (function () {
   var _TRACK_THROTTLE_MS = 30000; /* Only broadcast presence every 30s max */
 
   function updateLastSpin() {
-    if (!_presenceChannel || !_playerRegistered) return;
+    if (!_playerRegistered) return;
     /* Always store the last spin time locally */
     _lastSpinTime = new Date().toISOString();
-    /* Throttle presence track() — Supabase rate limits rapid calls.
-       Only broadcast if 30 seconds have passed since last track(). */
+    /* Throttle presence track() / DB touch — Supabase rate limits rapid
+       calls. Only update if 30 seconds have passed since last update. */
     var now = Date.now();
     if (now - _lastSpinTrackTime < _TRACK_THROTTLE_MS) return;
     _lastSpinTrackTime = now;
-    _presenceChannel.track({
-      gameId:      PROG_GAME_ID,
-      denom:       PROG_DENOM,
-      joinedAt:    _joinedAt || new Date().toISOString(),
-      playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
-      nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
-      sessionKey:  _sessionKey,
-      lastSpin:    _lastSpinTime
-    });
+
+    if (_presenceChannel) {
+      _presenceChannel.track({
+        gameId:      PROG_GAME_ID,
+        denom:       PROG_DENOM,
+        joinedAt:    _joinedAt || new Date().toISOString(),
+        playerLabel: _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
+        nickname:    _playerNickname || _playerLabel || ('sess_' + _sessionKey.substr(0, 6)),
+        sessionKey:  _sessionKey,
+        lastSpin:    _lastSpinTime
+      });
+    }
+
+    /* Touch player_registry.last_seen — the durable, DB-backed signal
+       that operator tools now use for "connected"/"inactive" displays.
+       Separate from register_player's nickname-gated re-call (which never
+       fires again for nickname-less players), so this keeps last_seen
+       fresh for EVERY player regardless of nickname. */
+    if (_client && _connected && _sessionKey) {
+      _client.rpc('touch_player_last_seen', { p_session_key: _sessionKey })
+        .then(function(res) {
+          if (res.error) console.warn('[Progressive] touch_player_last_seen error:', res.error.message);
+        })
+        .catch(function(err) {
+          console.warn('[Progressive] touch_player_last_seen catch:', err);
+        });
+    }
   }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -463,7 +481,6 @@ var Progressive = (function () {
      PRESENCE
      ═══════════════════════════════════════════════════════════════ */
   var _presenceRetryDelay = 2000;
-  var _presenceHeartbeatTimer = null;
   function _subscribePresence() {
     /* Expose client for Floor Manager writes and WABC client reuse.
        _wabcSupabaseClient MUST be set before WABC.init() runs so wabc.js
@@ -472,32 +489,6 @@ var Progressive = (function () {
     window._floorSupabaseClient = _client;
     window._wabcSupabaseClient  = _client;
     _doSubscribePresence();
-
-    /* PRESENCE HEARTBEAT (every 25s): presence is server-side, in-memory
-       state tied to a socket join. On Supabase free-tier, the Realtime
-       tenant repeatedly cold-starts/shuts down when idle, and the
-       underlying socket can silently reconnect WITHOUT this channel's
-       status callback re-firing CHANNEL_ERROR/CLOSED. When that happens
-       the channel object becomes a "zombie" — .track() calls (e.g. from
-       updateLastSpin() on every spin) succeed locally but go nowhere,
-       and the player's presence entry quietly vanishes server-side with
-       no visible error. Periodically tearing down and recreating the
-       presence channel guarantees a fresh join + fresh track(),
-       self-healing within ~25s regardless of zombie state. */
-    if (!_presenceHeartbeatTimer) {
-      _presenceHeartbeatTimer = setInterval(function () {
-        if (!_client) return;
-        var _old = _presenceChannel;
-        try {
-          var _rm = _client.removeChannel(_old);
-          if (_rm && typeof _rm.then === 'function') {
-            _rm.then(_doSubscribePresence).catch(_doSubscribePresence);
-          } else {
-            _doSubscribePresence();
-          }
-        } catch (e) { _doSubscribePresence(); }
-      }, 25000);
-    }
   }
 
   function _doSubscribePresence() {

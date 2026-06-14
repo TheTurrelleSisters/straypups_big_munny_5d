@@ -568,3 +568,46 @@ empty and let us apply the real fix.
   ~25s.
 - Cache bust: spbm-v582
 
+
+### v5.83 — REVERT v5.82 Presence Heartbeat (caused console flood + lockup)
+- v5.82's 25s full-teardown-recreate heartbeat for the presence channel
+  caused the F12 console to flood with errors and locked up the system.
+- Likely cause: the heartbeat raced with the EXISTING error-retry logic
+  (both could attempt removeChannel+recreate on the same channel
+  concurrently), and/or 25s-interval channel churn hit Supabase free-tier
+  Realtime connection/rate limits, triggering CHANNEL_ERROR -> retry loops
+  from both mechanisms simultaneously.
+- REVERTED ENTIRELY. Presence subscribe is back to the v5.81/v3.17/v1.15
+  state (one-shot subscribe + error-triggered retry with exponential
+  backoff, no periodic heartbeat). The "0 players with active games"
+  issue remains OPEN — needs a different approach.
+- Cache bust: spbm-v583
+
+
+### v5.84 — player_registry.last_seen Heartbeat (touch_player_last_seen)
+- ROOT CAUSE for "0 players" on operator tools, identified: register_player
+  RPC only re-fires on subsequent spins if a nickname is set
+  (if(nickname && _client && _connected)). For nickname-less players (the
+  majority), last_seen was frozen at first-connect time forever, even
+  while actively spinning — making player_registry unusable as a
+  "connected" signal.
+- NEW SQL RPC touch_player_last_seen(p_session_key) — updates ONLY
+  last_seen, kept separate from register_player to avoid any risk to the
+  nickname field.
+- updateLastSpin() now calls this RPC every ~30s (same throttle as the
+  existing presence track), unconditionally regardless of nickname.
+- This is part of a larger switch: all 3 operator tools (Progressive
+  Operator, WABC Master, Floor Manager) now read player_registry instead
+  of presence-lobby for Connected/Inactive counts and player lists — a
+  durable DB table instead of ephemeral Realtime presence state, which
+  has been unreliable all session.
+- Cache bust: spbm-v584
+
+  REQUIRED SQL (run once in Supabase SQL Editor):
+  CREATE OR REPLACE FUNCTION public.touch_player_last_seen(p_session_key text)
+  RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+  BEGIN
+    UPDATE player_registry SET last_seen = now() WHERE session_key = p_session_key;
+  END; $$;
+  GRANT EXECUTE ON FUNCTION public.touch_player_last_seen(text) TO anon, authenticated;
+
