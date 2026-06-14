@@ -49,42 +49,26 @@
   }
 
   /* ─── System command handler (progressive_commands) ─────────────── */
+  /* force_local_ball / restore_wide_ball were REMOVED from here.
+     The operator's "Force All Players to Local" / "Restore Wide Area"
+     buttons ALREADY send a 'wabc-ballpos' broadcast event (force_local /
+     restore_wide) in ADDITION to this progressive_commands row, and that
+     broadcast is fully handled by WABC.onForceLocal / WABC.onRestoreWide
+     in game.js — correctly setting BG.callSeq, BG.usingServerBalls, the
+     card/strip re-render, badge, and toast.
+
+     This duplicate handler raced against that one. For restore_wide_ball
+     it called fetchServerBallCall() -> Progressive.getBallCall(), a
+     legacy v5.39 stub that ALWAYS returns a brand-new RANDOM LOCAL
+     shuffle with isServer=false. Whichever handler ran LAST won — if this
+     one ran after WABC's correct handler, it CLOBBERED the real shared
+     WABC sequence with a random local one and set the badge back to
+     LOCAL, directly contradicting "restore wide area". This is the most
+     likely cause of games diverging onto their own random sequences.
+
+     WABC.onForceLocal/onRestoreWide (game.js) are now the SOLE authority
+     for ball-call mode switches — no duplicate handling needed. */
   function handleSystemCommand(row) {
-    var gameId = typeof PROG_GAME_ID !== 'undefined' ? PROG_GAME_ID : 'unknown';
-
-    if (row.command === 'force_local_ball') {
-      var target = (row.winner_game || '').trim();
-      if (target === '' || target === 'WABC' || target === gameId) {
-        if (typeof BG !== 'undefined') BG.usingServerBalls = false;
-        var banner = document.getElementById('prog-offline-banner');
-        var lbl    = document.getElementById('prog-meter-lbl');
-        if (banner) banner.classList.add('show');
-        if (lbl) { lbl.classList.add('local-mode'); lbl.textContent = '\u2605 LOCAL BALL CALL \u2605'; }
-        if (typeof updateBallCallBadge === 'function') updateBallCallBadge();
-        showBroadcastToast('Wide area ball call temporarily unavailable.', '\u26a0 Local Mode Active');
-      }
-      return true;
-    }
-
-    if (row.command === 'restore_wide_ball') {
-      var target2 = (row.winner_game || '').trim();
-      if (target2 === '' || target2 === 'WABC' || target2 === gameId) {
-        if (typeof fetchServerBallCall === 'function') {
-          fetchServerBallCall(function() {
-            var banner2 = document.getElementById('prog-offline-banner');
-            var lbl2    = document.getElementById('prog-meter-lbl');
-            if (typeof BG !== 'undefined' && BG.usingServerBalls) {
-              if (banner2) banner2.classList.remove('show');
-              if (lbl2) { lbl2.classList.remove('local-mode'); lbl2.textContent = '\u2605 PROGRESSIVE JACKPOT \u2605'; }
-            }
-            if (typeof updateBallCallBadge === 'function') updateBallCallBadge();
-            showBroadcastToast('Wide area ball call restored.', '\u2714 Wide Area Restored');
-          });
-        }
-      }
-      return true;
-    }
-
     return false;
   }
 

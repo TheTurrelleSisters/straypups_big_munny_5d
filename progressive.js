@@ -463,6 +463,7 @@ var Progressive = (function () {
      PRESENCE
      ═══════════════════════════════════════════════════════════════ */
   var _presenceRetryDelay = 2000;
+  var _presenceHeartbeatTimer = null;
   function _subscribePresence() {
     /* Expose client for Floor Manager writes and WABC client reuse.
        _wabcSupabaseClient MUST be set before WABC.init() runs so wabc.js
@@ -471,6 +472,32 @@ var Progressive = (function () {
     window._floorSupabaseClient = _client;
     window._wabcSupabaseClient  = _client;
     _doSubscribePresence();
+
+    /* PRESENCE HEARTBEAT (every 25s): presence is server-side, in-memory
+       state tied to a socket join. On Supabase free-tier, the Realtime
+       tenant repeatedly cold-starts/shuts down when idle, and the
+       underlying socket can silently reconnect WITHOUT this channel's
+       status callback re-firing CHANNEL_ERROR/CLOSED. When that happens
+       the channel object becomes a "zombie" — .track() calls (e.g. from
+       updateLastSpin() on every spin) succeed locally but go nowhere,
+       and the player's presence entry quietly vanishes server-side with
+       no visible error. Periodically tearing down and recreating the
+       presence channel guarantees a fresh join + fresh track(),
+       self-healing within ~25s regardless of zombie state. */
+    if (!_presenceHeartbeatTimer) {
+      _presenceHeartbeatTimer = setInterval(function () {
+        if (!_client) return;
+        var _old = _presenceChannel;
+        try {
+          var _rm = _client.removeChannel(_old);
+          if (_rm && typeof _rm.then === 'function') {
+            _rm.then(_doSubscribePresence).catch(_doSubscribePresence);
+          } else {
+            _doSubscribePresence();
+          }
+        } catch (e) { _doSubscribePresence(); }
+      }, 25000);
+    }
   }
 
   function _doSubscribePresence() {

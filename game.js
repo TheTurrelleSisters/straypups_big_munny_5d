@@ -653,7 +653,19 @@ function _activeCallNext(){
   }
   if(BG.card) renderBallStrip(BG.callSeq,BG.ballPos,BG.cardNumSet);
   // Cover All check (balls 41-75 entertainment phase)
-  if(BG.card&&Object.keys(BG.matchedCells).length===25){
+  /* !BG.seqExhausted guard: for a progressive/Lazy-T spin, all 25 cells
+     are ALREADY matched from the initial 40-ball cover-all setup (before
+     entertainment calling even starts), and _handleCoverAll(true) already
+     ran + requested a new sequence at spin-result time. Without this
+     guard, the FIRST entertainment tick (ball 41) would see
+     matchedCells.length===25 again and re-trigger _handleCoverAll, which
+     calls stopActiveCaller() — freezing ball-calling at 41 for the entire
+     Red Spin sequence. The guard lets calling continue normally (41-75)
+     during Red Spin, in sync with the new shared sequence once it arrives
+     via WABC.onNewCall. For a genuine FIRST-TIME cover-all reached during
+     balls 41-75 (non-progressive), seqExhausted is still false here, so
+     existing behavior is unchanged. */
+  if(BG.card&&Object.keys(BG.matchedCells).length===25&&!BG.seqExhausted){
     _handleCoverAll(false); // no penny — entertainment phase
   }
 }
@@ -921,13 +933,23 @@ function forcedSpinResult(syms){
   // each spin (e.g. Hopscotch shows SP/Cherry/1Bar OR Cherry/SP/1Bar OR 1Bar/SP/Cherry etc.)
   // Uses Fisher-Yates with the game CSPRNG so it's unpredictable.
   var shuffled=syms.slice();
-  /* Progressive (7) is a wild that substitutes for Scott (0) on normal
-     pattern wins — random per-spin, shuffled. Lazy-T's fixed 7-7-7 combo
-     (syms all === 7) is left untouched — that's the dedicated jackpot
-     trigger, not a substitution. */
+  /* Progressive is a wild that substitutes for Scott on normal pattern
+     wins — random per-spin, independent per symbol, shuffled. Any mix is
+     valid (e.g. Corporal Stripes can show Scott+Scott+Progressive or
+     Scott+Progressive+Progressive). The Lazy-T combo (syms all ===7) is
+     left untouched here — that's the dedicated jackpot trigger, not a
+     substitution.
+     However an ALL-PROGRESSIVE result must be EXCLUSIVE to the genuine
+     Lazy-T combo — if independent substitution happens to turn a
+     non-Lazy-T combo (e.g. Corporal Stripes' Scott x3) into all-Progressive,
+     revert one symbol back to Scott so it can never be visually identical
+     to the Lazy-T trigger. */
   if(!(shuffled[0]===7&&shuffled[1]===7&&shuffled[2]===7)){
     for(var _wi=0;_wi<shuffled.length;_wi++){
       if(shuffled[_wi]===0&&rng.pct(0.5)) shuffled[_wi]=7;
+    }
+    if(shuffled[0]===7&&shuffled[1]===7&&shuffled[2]===7){
+      shuffled[rng.int(0,2)]=0;
     }
   }
   for(var i=shuffled.length-1;i>0;i--){
@@ -1309,7 +1331,18 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         S.bal+=progCtx.amt;S.lastWin=_totalAmt;updUI();
         setTimeout(function(){
           _clearSpinWatchdog();
-          showProgJP(_totalAmt,progCtx.winPatterns,progCtx.cardSerial,progCtx.balBefore);
+          /* Safety net: if showProgJP throws for any reason, the watchdog
+             was just CLEARED (waiting for tap is normal, not "stuck"), so
+             without this catch the game would lock up PERMANENTLY with no
+             recovery path at all. */
+          try {
+            showProgJP(_totalAmt,progCtx.winPatterns,progCtx.cardSerial,progCtx.balBefore);
+          } catch(e) {
+            console.error('[Progressive] showProgJP threw — recovering controls:', e);
+            var _cel=document.getElementById('force-win-cel');
+            if(_cel) _cel.classList.remove('show');
+            S.spinning=false; setCtrl(true); updUI();
+          }
         },500);
         return;
       }
@@ -1329,11 +1362,22 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
         sndRedSpinEnd();
         setTimeout(function(){
           _clearSpinWatchdog();
-          showJP(payAmt,function(){
-          _refreshSpinWatchdog();
-          bonusTotal+=payAmt;S.bal+=payAmt;updUI();
-          setTimeout(function(){playNext();},300);
-        });},500);return;
+          /* Safety net: same reasoning as showProgJP above — without this,
+             a throw here would leave the watchdog cleared and the game
+             permanently locked with no recovery path. */
+          try {
+            showJP(payAmt,function(){
+              _refreshSpinWatchdog();
+              bonusTotal+=payAmt;S.bal+=payAmt;updUI();
+              setTimeout(function(){playNext();},300);
+            });
+          } catch(e) {
+            console.error('[RedSpin] showJP threw — recovering controls:', e);
+            var _jpov=document.getElementById('jp-ov');
+            if(_jpov) _jpov.classList.remove('on');
+            S.spinning=false; setCtrl(true); updUI();
+          }
+        },500);return;
       }
       bonusTotal+=payAmt;S.bal+=payAmt;
       document.getElementById('bval').textContent=fmt(S.bal);
@@ -1695,12 +1739,16 @@ function showProgJP(progAmt, winPatterns, cardSerial, balBefore) {
       patterns:winPatterns.map(function(p){return p.name;}),
       balBefore:balBefore, balAfter:S.bal});
 
-    /* Cover All occurred -> sequence ends per bingo rules.
-       Request a fresh WABC sequence for all players. */
+    /* Cover All already ended the sequence and requested a fresh WABC
+       sequence for all players at spin-result time (_handleCoverAll(true),
+       before Red Spin even started) — this is the SAME flow as any other
+       cover-all/WABC switch; being a Lazy-T/progressive win doesn't change
+       it. Do NOT request a second sequence here — that was redundant
+       (issuing a second new sequence after one was already adopted
+       mid-Red-Spin). Just stop the entertainment caller now that the
+       celebration is done. */
     stopActiveCaller();
-    BG.seqExhausted=true;
     updateBallCallBadge();
-    _requestNewWABCSequence();
 
     _spinDebounce = Date.now();
     (function(){if(_spinWatchdog){clearTimeout(_spinWatchdog);_spinWatchdog=null;}})();

@@ -498,3 +498,73 @@ empty and let us apply the real fix.
   same removeChannel-then-resubscribe pattern as wabc.js.
 - Cache bust: spbm-v579
 
+
+### v5.80 — CRITICAL: Fixed Ball-Call Sequence Divergence (force_local_ball/restore_wide_ball race)
+- Operator FORCE LOCAL / RESTORE WIDE buttons (WABC Master) fire on TWO
+  channels for the same action: (1) wabc-ballpos broadcast (force_local/
+  restore_wide), fully handled by WABC.onForceLocal/onRestoreWide in
+  game.js — correct in every way. (2) progressive_commands INSERT
+  (force_local_ball/restore_wide_ball), handled by broadcast-init.js,
+  which for restore_wide_ball called fetchServerBallCall() ->
+  Progressive.getBallCall() — a legacy v5.39 stub that ALWAYS returns a
+  brand-new RANDOM LOCAL shuffle with isServer=false.
+- These two handlers raced (different Realtime channels, different
+  latency). Whichever ran LAST won. If broadcast-init.js's handler ran
+  after WABC's correct one, it CLOBBERED the real shared WABC sequence
+  with a random local shuffle and reset the badge to LOCAL — directly
+  contradicting "restore wide area" and causing that game instance to
+  diverge onto its own random ball sequence while WABC/other games
+  continued on the shared one.
+- Fix: removed force_local_ball/restore_wide_ball handling from
+  broadcast-init.js entirely. WABC.onForceLocal/onRestoreWide are now the
+  SOLE authority for ball-call mode switches.
+- NOTE: fetchServerBallCall/refreshServerBallCall (game.js) and
+  Progressive.getBallCall/refreshBallCall (progressive.js) are now
+  UNREFERENCED legacy code — left in place pending confirmation before
+  removal.
+- Cache bust: spbm-v580
+
+
+### v5.81 — Corporal Stripes Combo Fix, Lockup Safety Net, Ball-Call Freeze Fix
+- Corporal Stripes (jp reel) substitution: kept independent per-symbol
+  substitution (any Scott/Progressive mix is valid), but if the result
+  happens to become ALL-Progressive on a non-Lazy-T combo, revert one
+  symbol back to Scott. The all-Progressive combo is now EXCLUSIVE to the
+  genuine Lazy-T trigger.
+- Lockup safety net: wrapped showProgJP/showJP calls in try/catch. If
+  either throws, the watchdog (just cleared, since waiting for a tap is
+  normal) would otherwise leave the game PERMANENTLY locked with no
+  recovery. Catch now logs the error, hides the relevant overlay, and
+  restores controls (setCtrl(true)).
+- Ball-call freeze fix: _activeCallNext's cover-all check now requires
+  !BG.seqExhausted. Previously, a progressive/Lazy-T spin (which already
+  satisfies all 25 cells from its initial 40-ball setup and already
+  requested a new sequence via _handleCoverAll(true)) would freeze the
+  entertainment caller at ball 41 on its first tick, because the
+  redundant cover-all re-trigger called stopActiveCaller(). Now the
+  caller keeps ticking 41-75 throughout Red Spin, in sync with the new
+  shared sequence as it arrives via WABC.onNewCall — same as any other
+  cover-all/WABC sequence switch.
+- Removed the SECOND, redundant _requestNewWABCSequence() call in
+  showProgJP's onDismiss handler — a new sequence was already requested
+  and adopted at spin-result time (before Red Spin started); requesting
+  another after the celebration was unnecessary. Being a
+  progressive/Lazy-T win does not change the cover-all/WABC-switch flow.
+- Cache bust: spbm-v581
+
+
+### v5.82 — Presence Heartbeat (zombie-channel fix)
+- updateLastSpin() already re-calls .track() every ~30s during active
+  play, yet presence still showed 0 — meaning re-tracking on the SAME
+  channel object is not enough. Hypothesis: the Supabase free-tier
+  Realtime tenant repeatedly cold-starts/shuts down, and the underlying
+  socket can silently reconnect WITHOUT this channel's status callback
+  re-firing CHANNEL_ERROR/CLOSED. The channel becomes a "zombie" —
+  .track() succeeds locally but the presence entry is gone server-side,
+  with no visible error.
+- Added a 25s heartbeat: fully removeChannel + recreate the presence
+  channel (fresh join + fresh track()) on a fixed interval, regardless of
+  whether an error was ever observed. Self-heals a zombie channel within
+  ~25s.
+- Cache bust: spbm-v582
+
