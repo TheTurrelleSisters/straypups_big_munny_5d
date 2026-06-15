@@ -987,3 +987,42 @@ Cache bust: spbm-v588. Splash/title version updated to v5.88.
   was flagged but left as-is per Sasha's direction ("leave it as is").
 
 - Cache bust: spbm-v589. Splash/title version updated to v5.89.
+
+
+### v5.90 — Reel Spin Direction Fix (downward) + Reduced Blur
+
+Two follow-ups to v5.89's smooth-stop testing:
+
+- **Spin direction reversed (was upward, now downward)**: the v5.89 smooth
+  stop removed the old overshoot+snap, which exposed that the underlying
+  scroll motion had ALWAYS been bottom-to-top ("upward") — the old snap-
+  back at the very end was the only "downward" cue, masking it.
+  Restructured spinReel's strip: the 5 final ghost symbols
+  (above2/above/sym/below/below2, in that order) are now built FIRST (top
+  of strip) followed by the 36 random scroll symbols. strip.top now
+  INCREASES from startY to targetY (was 0 to targetY) — content now flows
+  top-to-bottom: random symbols scroll down and exit below, while the
+  ghosts enter from above and settle into the payline window in their
+  correct relative positions. centerIdx is now fixed at 2 (the 'sym'
+  ghost's index in the 5-ghost block). startY = spinTopOff -
+  (spinSyms.length-1)*slotH; targetY unchanged formula
+  (spinTopOff-centerIdx*slotH). The v5.89 velocity-matched
+  constant-then-decelerate formula was generalized for travel=targetY-
+  startY (now positive) with pos=startY+... — same smooth landing, just
+  the opposite direction and a non-zero start position.
+
+  Symbol-shuffle rules unaffected: the 5 ghosts keep their existing
+  internal order/adjacency (above2,above,sym,below,below2) — only the
+  WHOLE BLOCK moved from the end of the strip array to the front. The
+  v5.85 STRIPS reshuffle (no two adjacent symbols identical, circularly)
+  still guarantees finalGhost.above !== finalGhost.sym, so "no identical
+  symbol shown directly above the payline and on the payline at the same
+  time" still holds.
+
+- **Reduced spin blur**: .reel.spinning .reel-strip blur 6px -> 2px
+  (css/styles.css). With v5.88's ~2x longer spin duration and v5.89's
+  continuous (non-jarring) motion, the full-strength blur was visible for
+  the entire spin and read as excessive. 2px keeps a sense of motion
+  without obscuring the strip.
+
+Cache bust: spbm-v590. Splash/title version updated to v5.90.

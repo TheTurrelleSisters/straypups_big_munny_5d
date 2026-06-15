@@ -1165,17 +1165,25 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   var spinTopOff=spinWinH>0?Math.round(spinWinH/2-slotH*1.5):0;
   if(slotH<10) slotH=SLOT_H;
 
-  // Build spin strip: random symbols (mix of all ids including blanks) + final 3
+  // v5.90: final 5 ghost symbols FIRST (top of strip), random scroll
+  // symbols AFTER. strip.top now INCREASES over time, so the ghosts
+  // (already in correct above2/above/sym/below/below2 relative order —
+  // adjacency between 'above' and 'sym' guaranteed non-duplicate by the
+  // STRIPS reshuffle, so the same "no identical symbol above payline and
+  // payline at once" rule still holds) enter from above and settle into
+  // the payline window, while the random symbols scroll DOWN and exit
+  // below — matches conventional top-to-bottom slot-machine spin
+  // direction.
   // v5.88: 36 scroll symbols (was 18) so the reel visually passes through
   // 2-3x more symbol images — reads as a longer, fuller spin.
-  var SPIN_SYM_IDS=[0,1,2,3,4,5,6,7];
   var spinSyms=[];
-  for(var i=0;i<36;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,7)]);
   spinSyms.push(finalGhost.above2);
   spinSyms.push(finalGhost.above);
   spinSyms.push(finalGhost.sym);
   spinSyms.push(finalGhost.below);
   spinSyms.push(finalGhost.below2);
+  var SPIN_SYM_IDS=[0,1,2,3,4,5,6,7];
+  for(var i=0;i<36;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,7)]);
 
   strip.innerHTML='';
   strip.style.height='auto';
@@ -1186,11 +1194,17 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
     strip.appendChild(slot);
   }
 
-  // targetY: center the payline slot (centerIdx) in the window.
+  // targetY: center the payline slot ('sym', always index 2 — the 3rd of
+  // the 5-ghost block now at the FRONT of the strip) in the window.
+  // startY: strip position at spin start, placing the LAST random symbol
+  // (index spinSyms.length-1) at that same centered position — the strip
+  // then travels (spinSyms.length-1-centerIdx) slot-heights DOWNWARD
+  // (strip.top increasing) over the spin.
   // Payline slot top must be at (winH-slotH)/2 = -spinTopOff from window top.
   // strip.top + centerIdx*slotH = -spinTopOff  =>  strip.top = -spinTopOff - centerIdx*slotH
-  var centerIdx=spinSyms.length-3; // payline is 3rd from end in 5-slot sequence
-  var targetY=spinTopOff-centerIdx*slotH; // strip.top that centers payline slot
+  var centerIdx=2; // 'sym' ghost — fixed: always 3rd in the 5-ghost block
+  var targetY=spinTopOff-centerIdx*slotH;          // strip.top that centers the payline slot (end)
+  var startY=spinTopOff-(spinSyms.length-1)*slotH; // strip.top at spin start
 
   // v5.89: smooth natural stop — no overshoot, no snap-back.
   // Phase 1 (0..t1): constant velocity. Phase 2 (t1..stopDelay): linear
@@ -1199,9 +1213,10 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   // targetY at the end of phase 2 — no overshoot, no instant snap.
   var t1=Math.round(stopDelay*0.7); // phase 1 end: constant velocity
   var tauMax=stopDelay-t1;          // phase 2 duration: deceleration
-  var velocity=(2*targetY)/(t1+stopDelay); // px/ms, matches both phases
+  var travel=targetY-startY;        // v5.90: total distance (positive — strip.top increases, content flows downward)
+  var velocity=(2*travel)/(t1+stopDelay); // px/ms, matches both phases
 
-  strip.style.top='0px';
+  strip.style.top=startY.toFixed(1)+'px';
   strip.style.willChange='top';
   reel.classList.add('spinning');
 
@@ -1246,11 +1261,11 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
     var pos;
     if(elapsed<t1){
       // Phase 1: constant velocity
-      pos=velocity*elapsed;
+      pos=startY+velocity*elapsed;
     } else {
       // Phase 2: linear deceleration from `velocity` to 0, landing on targetY
       var tau=elapsed-t1;
-      pos=velocity*t1+velocity*tau-0.5*(velocity/tauMax)*tau*tau;
+      pos=startY+velocity*t1+velocity*tau-0.5*(velocity/tauMax)*tau*tau;
     }
     strip.style.top=pos.toFixed(1)+'px';
     requestAnimationFrame(frame);
