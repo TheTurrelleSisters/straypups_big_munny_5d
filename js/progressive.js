@@ -650,6 +650,18 @@ var Progressive = (function () {
           onClaimed(false);
           return;
         }
+        /* v5.90: claim succeeded — clear armed state immediately so the
+           NEXT spin doesn't think a force_jackpot is still armed.
+           contribute() returns _forceArmed directly (no _forceClaimed
+           check) to determine _biasedBalls=24 for genBiasedBingoCard —
+           without this reset, every subsequent spin would keep biasing
+           toward a 24-ball Cover-All, making BG._coverAll1to40 true
+           almost every spin and firing _requestNewWABCSequence()
+           repeatedly (racing with the next spin's doBingoSpin and
+           corrupting BG.callSeq/matchedCells — the "2nd spin freeze /
+           blank card / ball call cells" bug). */
+        _forceArmed     = false;
+        _forceCommandId = null;
         _client.rpc('progressive_hit', { reset_to: _seed }).then(function (rpcRes) {
           /* Supabase RPC errors resolve with {error:...}, NOT a rejected
              promise — must check explicitly or a failed server-side reset

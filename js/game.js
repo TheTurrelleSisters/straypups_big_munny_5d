@@ -1192,41 +1192,29 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   var centerIdx=spinSyms.length-3; // payline is 3rd from end in 5-slot sequence
   var targetY=spinTopOff-centerIdx*slotH; // strip.top that centers payline slot
 
-  // Overshoot: strip travels 0.6 slots past target then snaps back
-  var overshootExtra=Math.round(slotH*0.6);
-  var overshootY=targetY-overshootExtra;
-
-  // Phase timing
-  var t1=Math.round(stopDelay*0.75); // phase 1 end: constant velocity
-  var t2=Math.round(stopDelay*0.90); // phase 2 end: overshoot reached
-  // phase 3: snap (single frame, fires at t2)
+  // v5.89: smooth natural stop — no overshoot, no snap-back.
+  // Phase 1 (0..t1): constant velocity. Phase 2 (t1..stopDelay): linear
+  // deceleration to exactly 0 velocity at targetY. Velocity is continuous
+  // across the t1 boundary (no jump), and the strip lands exactly on
+  // targetY at the end of phase 2 — no overshoot, no instant snap.
+  var t1=Math.round(stopDelay*0.7); // phase 1 end: constant velocity
+  var tauMax=stopDelay-t1;          // phase 2 duration: deceleration
+  var velocity=(2*targetY)/(t1+stopDelay); // px/ms, matches both phases
 
   strip.style.top='0px';
   strip.style.willChange='top';
   reel.classList.add('spinning');
 
   var startTime=null;
-  var snapped=false;
+  var stopped=false;
 
   function frame(ts){
     if(!startTime) startTime=ts;
     var elapsed=ts-startTime;
 
-    if(elapsed<t1){
-      // Phase 1: constant velocity — full speed from frame 1, scrolls to overshootY
-      var p1=elapsed/t1;
-      strip.style.top=(p1*overshootY).toFixed(1)+'px';
-      requestAnimationFrame(frame);
-
-    } else if(elapsed<t2){
-      // Phase 2: hold at overshoot position (brief pause before snap)
-      strip.style.top=overshootY.toFixed(1)+'px';
-      requestAnimationFrame(frame);
-
-    } else {
-      // Phase 3: snap to exact target — instant mechanical thud
-      if(!snapped){
-        snapped=true;
+    if(elapsed>=stopDelay){
+      if(!stopped){
+        stopped=true;
         strip.style.top=targetY.toFixed(1)+'px';
         reel.classList.remove('spinning');
         reel.classList.add('stopping');
@@ -1252,7 +1240,20 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
           onStop();
         },80);
       }
+      return;
     }
+
+    var pos;
+    if(elapsed<t1){
+      // Phase 1: constant velocity
+      pos=velocity*elapsed;
+    } else {
+      // Phase 2: linear deceleration from `velocity` to 0, landing on targetY
+      var tau=elapsed-t1;
+      pos=velocity*t1+velocity*tau-0.5*(velocity/tauMax)*tau*tau;
+    }
+    strip.style.top=pos.toFixed(1)+'px';
+    requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 }

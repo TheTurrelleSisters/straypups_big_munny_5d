@@ -938,3 +938,52 @@ Lazy-T."
     further after testing if it still doesn't feel like enough rotations.
 
 Cache bust: spbm-v588. Splash/title version updated to v5.88.
+
+
+### v5.89 — Smooth Reel Stop, Critical _forceArmed Reset Fix (2nd-spin freeze)
+
+- **Smooth natural reel stop (no overshoot/snap)**: spinReel's stop
+  animation previously scrolled past the target by 0.6 slots, held there
+  briefly, then INSTANTLY SNAPPED back to the exact target ("mechanical
+  thud"). Replaced with a single continuous motion: 70% of stopDelay at
+  constant velocity, then 30% linear deceleration to exactly 0 velocity
+  AT targetY — velocity-matched at the phase boundary (no jump), lands
+  exactly on target with no overshoot and no snap. centerIdx/targetY/
+  stopDelay all unchanged from v5.88 (still ~2x duration / 36 scroll
+  symbols) — only the STOP MOTION changed.
+
+- **CRITICAL FIX — "2nd spin freeze / blank card / ball call cells
+  corrupted" bug**: root cause was in _claimForceWin (js/progressive.js,
+  both games) — on a SUCCESSFUL claim, _forceArmed and _forceCommandId
+  were NEVER reset (only _forceClaimed=true was set). This was harmless
+  pre-v5.88 (the old claimForce path checked _forceClaimed directly), but
+  v5.88's contribute() returns _forceArmed DIRECTLY to decide
+  _biasedBalls=24 for genBiasedBingoCard -- so after ANY successful
+  jackpot claim, EVERY subsequent spin kept biasing toward a 24-ball
+  Cover-All. This made BG._coverAll1to40 true on nearly every spin,
+  firing _handleCoverAll(true)/_requestNewWABCSequence() repeatedly,
+  racing with the next spin's doBingoSpin and corrupting
+  BG.callSeq/matchedCells -- "card goes blank, ball call cells affected,
+  around the 2nd spin" (i.e. the spin AFTER any jackpot claim).
+  Fix: _claimForceWin's success path now resets _forceArmed=false;
+  _forceCommandId=null; immediately after a successful claim.
+
+  IMPORTANT FOR THIS DEPLOY: if progressive_commands has any leftover
+  status='armed' rows from EARLIER test sessions (before this fix
+  existed), _checkArmedCommand() would still set _forceArmed=true from
+  spin 1 of a fresh session. Before testing, run:
+    SELECT id, command, status, created_by, created_at
+      FROM progressive_commands WHERE status='armed';
+  and cancel anything stale:
+    UPDATE progressive_commands SET status='cancelled' WHERE id=<id>;
+
+- **Pattern threshold review (no code change)**: BINGO_PATTERNS' balls
+  thresholds (Pyramid=29, G Flat=36, Stepladder=36, etc.) were confirmed
+  correct per Sasha's examples. Discussed the cumulative (stacking)
+  nature of thresholds vs. an exclusive-tier model -- confirmed current
+  cumulative/stacking design is intentional and stays as-is. Custom
+  Bingo Card Generator's interaction with Lazy-T (it can stack the real
+  progressive jackpot if Lazy-T naturally completes on a biased card)
+  was flagged but left as-is per Sasha's direction ("leave it as is").
+
+- Cache bust: spbm-v589. Splash/title version updated to v5.89.
