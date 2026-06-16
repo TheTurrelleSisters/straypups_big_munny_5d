@@ -151,6 +151,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
     rgba(20,5,0,.30) 84%,
     rgba(20,5,0,.78) 100%);
   border-radius:20px}
+.reel{-webkit-transform:scaleY(-1);transform:scaleY(-1)}
+.reel-slot{-webkit-transform:scaleY(-1);transform:scaleY(-1)}
 .reel-strip{position:absolute;left:0;right:0;top:0;
   display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;
   /* height set by JS in px — no CSS height needed */}
@@ -182,8 +184,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   -webkit-animation:rp .8s ease infinite alternate;animation:rp .8s ease infinite alternate}
 @-webkit-keyframes rp{from{background:rgba(160,0,0,.18)}to{background:rgba(220,0,0,.30)}}
 @keyframes rp{from{background:rgba(160,0,0,.18)}to{background:rgba(220,0,0,.30)}}
-.reel-strip.spinning{-webkit-filter:blur(2px);filter:blur(2px)}
-.reel-strip.stopping{-webkit-filter:blur(0);filter:blur(0);-webkit-transition:-webkit-filter .15s;transition:filter .15s}
+.reel.spinning .reel-strip{-webkit-filter:blur(6px);filter:blur(6px)}
+.reel.stopping .reel-strip{-webkit-filter:blur(0);filter:blur(0);-webkit-transition:-webkit-filter .15s;transition:filter .15s}
 #reel-frame.bonus-active{border-color:var(--crim);
   -webkit-animation:rborder .8s ease infinite alternate;animation:rborder .8s ease infinite alternate}
 @-webkit-keyframes rborder{from{box-shadow:0 0 12px rgba(200,0,0,.4)}to{box-shadow:0 0 30px rgba(255,40,0,.7)}}

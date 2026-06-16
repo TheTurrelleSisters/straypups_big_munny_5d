@@ -19,25 +19,7 @@
  * ============================================================
  */
 
-/* ── 1. SLOT PAY TABLE ───────────────────────────────────────────────────────
-   PAY[symbolId] = [payout_bet1, payout_bet2, payout_bet3]
-   Symbol IDs: 0=SP(Wild)  1=Seven  2=3-Bar  3=2-Bar  4=1-Bar  5=Cherry  6=Blank
-   BARS  : any mixed-bar combination payout
-   CPART : single-cherry payout per credit bet
-   MBAR  : mixed-bar payout per credit bet
-   JP    : jackpot (3×SP) payout per credit bet
-   ─────────────────────────────────────────────────────────────────────────── */
-var BARS  = [2, 3, 4];
-var PAY   = {
-  1: [50,  100, 150],   // 7-7-7
-  2: [25,   50,  75],   // 3Bar-3Bar-3Bar
-  3: [15,   30,  45],   // 2Bar-2Bar-2Bar
-  4: [ 8,   16,  24],   // 1Bar-1Bar-1Bar
-  5: [ 3,    6,   9]    // Cherry-Cherry-Cherry
-};
-var CPART = [1, 2, 3];  // 1-cherry pays (per bet level)
-var MBAR  = [2, 4, 6];  // mixed-bar pays (per bet level)
-var JP    = [800, 1600, 2500]; // SP-SP-SP jackpot (per bet level)
+// SP-SP-SP jackpot (per bet level)
 
 /* ── 2. VIRTUAL STOP TABLE ───────────────────────────────────────────────────
    Controls how often each symbol lands on the payline during non-bingo spins.
@@ -127,7 +109,7 @@ var BINGO_PATTERNS = [
   {name:'Christmas Tree',   balls:38, pay:[25,50,75],      reel:'2b',
    cells:[2,6,7,8,10,11,12,13,14,17,22]},
 
-  {name:'Private Stripes',  balls:30, pay:[12,24,38],      reel:'1b',
+  {name:'Private Stripes',  balls:30, pay:[12,24,36],      reel:'1b',
    cells:[2,6,8,10,14]},
 
   {name:'Stepladder',       balls:36, pay:[10,20,30],      reel:'spmb',
