@@ -4,7 +4,40 @@
 
 ---
 
-## Current Version: v5.54 (cache: spbm-v554)
+---
+
+## v5.91 — spinReel reverted to v5.87 (both games)
+
+### Problem diagnosed
+Post-v5.88 reel rewrites (v5.89/v5.90 spin-direction fix) introduced 3 regressions:
+1. 3rd reel showing blank spaces (strip height/layout collapsing on the 3rd reel)
+2. Visible snap/thud at reel stop (velocity mismatch: v5.90 startY/targetY
+   calculation left the strip far off-position at frame 0, causing a jump)
+3. Big lag during spinning (36-symbol strip + CSS transform on long strip caused
+   GPU compositing cost; also positive-travel direction confused the phase timing)
+4. Reels landing on wins with no matching bingo patterns (reel visual was
+   decoupled from the underlying ghost/symbol data — blank reel = wrong symbol
+   being displayed, so the 'win' animation fired on a mismatch)
+
+### Fix: transplanted v5.87 spinReel verbatim from GitHub commit
+-  game: commit 6470d5b (v5.87) spinReel
+-  game: commit 2d3006a (v5.87) spinReel
+The v5.87 spinReel uses 18 random scroll symbols followed by the 5 ghost symbols
+at the END of the strip. centerIdx = spinSyms.length-3 (3rd from end). Strip
+travels negative (upward) — the original working direction. Overshoot (~0.6
+slots past target) + snap-back is present and intentional — gives the mechanical
+'thud' feel that was always there through v5.87. All helpers (symSlotH,
+blkSlotH, stripTopFor, stripTotalH, buildSlot, SLOT_H, SYM_PCT) are identical
+between v5.87 and current, so the transplant is a clean drop-in with no
+dependency changes.
+All post-v5.87 work (progressive syntax fix, _forceArmed reset, Custom Bingo
+Card Generator, WABC shared sequence, PROG_GAME_TITLES maxine entry, etc.)
+is PRESERVED — only spinReel changed.
+- Cache bust: spbm-v591
+- Script query strings updated: game.js?v=v5.91, progressive.js?v=v5.91
+
+
+## Current Version: v5.91 (cache: spbm-v591)
 
 ---
 
