@@ -1169,11 +1169,6 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   if(sH<10) sH=SLOT_H;
   var winH=spinWinH>0?spinWinH:sH*3;
 
-  /* Build scroll strip: 24 random symbols (including blanks, id=6) followed
-     by the 5 landing ghost symbols — same order as v5.84. During spin ALL
-     slots including blanks use sH (symSlotH) so the tape scrolls uniformly.
-     Bingo outcome is already determined — ghosts come from STRIPS via
-     genSpinResult/forcedSpinResult, this function only animates them. */
   var SPIN_SYM_IDS=[0,1,2,3,4,5,6,7];
   var spinSyms=[];
   for(var i=0;i<24;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,7)]);
@@ -1183,9 +1178,18 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   spinSyms.push(finalGhost.below);
   spinSyms.push(finalGhost.below2);
 
+  var spinTopOff=Math.round(winH/2-sH*1.5);
+  var centerIdx=spinSyms.length-3;
+  var targetY=spinTopOff-centerIdx*sH;
+
+  /* Set top=0 and build strip BEFORE any class changes or compositor
+     promotion — ensures browser has a clean starting position.
+     spinning class (blur) is added inside the rAF, after top=0 is
+     committed to the layout, so it never interferes with the start. */
   strip.innerHTML='';
   strip.style.height='auto';
   strip.style.transition='none';
+  strip.style.top='0px';
   spinSyms.forEach(function(id){
     var slot=buildSlot(id);
     slot.style.height=sH+'px';
@@ -1193,24 +1197,14 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
     strip.appendChild(slot);
   });
 
-  /* targetY — same math as v5.84:
-     spinTopOff = round(winH/2 - sH*1.5)
-     centerIdx  = spinSyms.length - 3  (index of ghost.sym)
-     targetY    = spinTopOff - centerIdx * sH  (large negative)
-     strip animates 0 -> targetY (moves UP) = symbols scroll DOWNWARD ✓ */
-  var spinTopOff=Math.round(winH/2-sH*1.5);
-  var centerIdx=spinSyms.length-3;
-  var targetY=spinTopOff-centerIdx*sH;
-
-  strip.style.top='0px';
-  reel.classList.add('spinning');
-
-  /* Double rAF guarantees browser paints top=0 before the CSS transition
-     fires — reliable on mobile Safari unlike getBoundingClientRect alone.
-     Single smooth ease-out replaces the rAF loop + overshoot + snap that
-     caused freeze/jank on mobile with the long strip. */
   requestAnimationFrame(function(){
+    /* First rAF: browser has processed top=0 and the new DOM.
+       Now add blur and kick off second rAF before transitioning. */
+    reel.classList.add('spinning');
     requestAnimationFrame(function(){
+      /* Second rAF: compositor layer is active with top=0 as baseline.
+         Now apply the transition — animates FROM 0 TO targetY (negative)
+         = strip moves UP = symbols scroll DOWNWARD through window. */
       strip.style.transition='top '+stopDelay+'ms cubic-bezier(0.22,0.61,0.36,1)';
       strip.style.top=targetY+'px';
 
@@ -1219,12 +1213,8 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
         reel.classList.remove('spinning');
         reel.classList.add('stopping');
         sndReelStop();
-
-        /* Rebuild rest strip immediately — no setTimeout overlap possible
-           since we are already in the transitionend callback */
         strip.innerHTML='';
         strip.style.transition='none';
-        strip.style.willChange='';
         var winEl=document.getElementById('rw'+reelIdx);
         var liveH=winEl?winEl.clientHeight:0;
         var winH2=liveH>0?liveH:(_reelWinH>0?_reelWinH:SLOT_H*3);
@@ -1238,7 +1228,6 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
           rs.style.flex='none';
           strip.appendChild(rs);
         }
-
         setTimeout(function(){
           reel.classList.remove('stopping');
           onStop();
@@ -1250,8 +1239,7 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
 }
 function animateReels(spinData,cb){
   var STOP_DELAYS=[1200,1800,2400];sndSpinStart(); /* 3-rotation spin */
-  for(var ri=0;ri<3;ri++) document.getElementById('r'+ri).classList.add('spinning');
-  var done=0;
+    var done=0;
   function onReelStop(r){return function(){done++;if(done===3) setTimeout(cb,100);};}
   for(var ri2=0;ri2<3;ri2++){(function(r){spinReel(r,spinData.ghosts[r],STOP_DELAYS[r],onReelStop(r));})(ri2);}
 }

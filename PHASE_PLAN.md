@@ -6,6 +6,28 @@
 
 ---
 
+---
+
+## v5.89 — spinReel direction fix (compositor ordering)
+
+### Problem
+CSS transition spinReel introduced in v5.87/v5.88 was still spinning upward
+(wrong direction) on real devices. Root cause: `animateReels` was calling
+`reel.classList.add('spinning')` on all 3 reels BEFORE `spinReel` ran,
+promoting a compositor layer while the strip still had its old rest `top`
+value. The double-rAF inside `spinReel` then animated FROM that old value
+rather than from `top=0`, making it appear to spin upward.
+
+### Fix
+- Removed `reel.classList.add('spinning')` pre-call from `animateReels`
+- Inside `spinReel`: set `top=0` and build strip DOM first (no classes active),
+  then first rAF adds `spinning` class, then second rAF applies the CSS
+  transition from `top=0` -> `targetY` (large negative = strip moves up =
+  symbols scroll downward through window, correct direction)
+- `transitionend` callback rebuilds rest strip cleanly with no overlap
+- All bingo logic, ghost data, STRIPS untouched — reel animation only
+
+
 ## v5.91 — spinReel reverted to v5.87 (both games)
 
 ### Problem diagnosed
@@ -37,7 +59,7 @@ is PRESERVED — only spinReel changed.
 - Script query strings updated: game.js?v=v5.91, progressive.js?v=v5.91
 
 
-## Current Version: v5.91 (cache: spbm-v591)
+## Current Version: v5.89
 
 ---
 
