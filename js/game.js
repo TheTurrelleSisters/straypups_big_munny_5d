@@ -2005,5 +2005,5 @@ document.getElementById('ic-no').addEventListener('click',function(){document.ge
 document.querySelectorAll('.icpre').forEach(function(btn){btn.addEventListener('click',function(){var a=parseFloat(btn.getAttribute('data-a'));var _ciBalP=S.bal;S.bal+=a;opLog({type:'CASH_IN',amount:a,balBefore:_ciBalP,balAfter:S.bal});updUI();toast(fmt(a)+' ADDED');sndCreditsAddUp();document.getElementById('ic-ov').classList.remove('on');});});
 document.getElementById('ic-ov').addEventListener('click',function(e){if(e.target===this)this.classList.remove('on');});
 
-}());
+}();
 
