@@ -134,6 +134,8 @@ var BINGO_PATTERNS = [
   // ── PROGRESSIVE JACKPOT ─────────────────────────────────────────────────
   // Class II compliant: bingo-determined. Cover All (all 25 cells) in ≤25 balls.
   // Awards progressive pot PLUS sum of ALL other pattern payouts stacked.
+  // Reel shows new StrayPup Progressive symbol (coverall).
+  // Do NOT change balls threshold without owner approval.
   // Lazy-T: O column (4,9,14,19,24) + N/middle row (10,11,12,13,14) = 9 cells.
   // Symbol 7-7-7 (Progressive mascot) on reels. Bonanza Bingo rules: this is
   // the dedicated Progressive trigger pattern, distinct from Cover All 40/75

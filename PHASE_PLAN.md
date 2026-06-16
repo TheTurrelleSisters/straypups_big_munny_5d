@@ -1,5 +1,5 @@
-# StrayPups Big Munny $1 — Phase Plan
-## Repo: straypups_big_munny_v5_27_PWA
+# StrayPups Big Munny $5 — Phase Plan
+## Repo: straypups_big_munny_5d
 ## Source of truth: zip archives. GitHub is behind.
 
 ---
@@ -49,7 +49,7 @@ rather than from `top=0`, making it appear to spin upward.
 - All bingo logic, ghost data, STRIPS untouched — reel animation only
 
 
-## v5.92 — spinReel reverted to v5.87 (both games)
+## v5.91 — spinReel reverted to v5.87 (both games)
 
 ### Problem diagnosed
 Post-v5.88 reel rewrites (v5.89/v5.90 spin-direction fix) introduced 3 regressions:
@@ -76,8 +76,8 @@ dependency changes.
 All post-v5.87 work (progressive syntax fix, _forceArmed reset, Custom Bingo
 Card Generator, WABC shared sequence, PROG_GAME_TITLES maxine entry, etc.)
 is PRESERVED — only spinReel changed.
-- Cache bust: spbm-v592
-- Script query strings updated: game.js?v=v5.92, progressive.js?v=v5.92
+- Cache bust: spbm-v591
+- Script query strings updated: game.js?v=v5.91, progressive.js?v=v5.91
 
 
 ## Current Version: v5.90
@@ -1106,41 +1106,24 @@ Cache bust: spbm-v590. Splash/title version updated to v5.90.
 
 ### v5.93 — EMERGENCY: Service Worker Cache Fix (Splash Screen Lockout)
 
-**ROOT CAUSE (audit finding):** Service worker listed `./icon-192.png` and
-`./icon-512.png` in FILES cache list. These files DO NOT EXIST at the root of
-this repo — they live at `./assets/icons/icon-192x192.png` etc. Since
-`cache.addAll()` is atomic, ONE missing file causes the ENTIRE install to fail.
-The PWA install never completed, leaving the old broken cache in place and the
-game stuck at the splash screen on EVERY load.
-
-Additionally: CACHE version was `spbm-v590` but the last delivered build was
-v5.92 — cache was never bumped, so even if install had succeeded, browsers
-would have served stale cached files.
+**ROOT CAUSE:** Identical to $1 game. `icon-192.png`/`icon-512.png` referenced
+in FILES but completely missing from repo root (only exist at
+`assets/icons/icon-192x192.png`). Atomic `cache.addAll()` failure = game never
+installed. CACHE version also stale at `spbm-v590` (should have been v5.92).
 
 **Fixes applied:**
-- `service-worker.js`: corrected icon paths to `./assets/icons/icon-192x192.png`
-  and `./assets/icons/icon-512x512.png` (files confirmed present)
-- `service-worker.js`: bumped CACHE to `spbm-v593`
-- `index.html`: updated `<title>`, `#splash-ver`, and all script `?v=` query
-  strings to `v5.93`
+- `service-worker.js`: corrected icon paths, bumped CACHE to `spbm5d-v593`
+- `index.html`: all version strings updated to v5.93
 
-**PERMANENT RULE REINFORCED:** Cache bust = CACHE string + ALL ?v= query strings
-+ splash/title version display — all four must change together, every build.
-
-- Cache bust: spbm-v593
+- Cache bust: spbm5d-v593
 
 
-### v5.94 — CRITICAL: Missing Closing Brace in runRS() (Syntax Error)
+### v5.94 — CRITICAL: Missing Closing Brace in runRS() + IIFE Closure Fix
 
-**ROOT CAUSE:** `function runRS()` (line 1262) was missing its closing `}`.
-The nested `function playNext()` closed correctly at line 1373, but `runRS`
-itself had no closing brace. This left brace depth at 2 instead of 1 at the
-end of the file, causing V8 to reject the entire `game.js` with
-`SyntaxError: Unexpected token ')'` at the final `}());` IIFE closure.
+**ROOT CAUSE (same as $1 game):** `runRS()` missing closing `}`.
+Additionally, the outer IIFE closed with `}();` instead of `}());` —
+the outer grouping `)` was missing, causing a separate parse error.
 
-The game would not load past the splash screen on any deployed device.
+**Fixes:** Inserted `}` to close `runRS()`, corrected `}();` → `}());`.
 
-**Fix:** Inserted a single `}` after line 1373 to close `runRS()`.
-**Applied to:** both bingo games ($1 and $5) and Maxine's Wild Cherries.
-
-- Cache bust: spbm-v594
+- Cache bust: spbm5d-v594
