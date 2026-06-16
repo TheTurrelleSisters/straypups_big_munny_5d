@@ -1,10 +1,6 @@
 
 (function(){
 'use strict';
-/* DENOM — $5 version */
-var DENOM = 5.00;
-
-
 
 var IMG_SCOTT=document.getElementById('img-scott');
 var IMG_SPLASH=document.getElementById('img-splash');
@@ -1008,15 +1004,15 @@ function mkSym(id){
 function _loadPlayerState(){
   var bal=100,cpl=1;
   try{
-    var rawBal=localStorage.getItem('spbm5_bal');
-    var rawCpl=localStorage.getItem('spbm5_cpl');
+    var rawBal=localStorage.getItem('spbm_bal');
+    var rawCpl=localStorage.getItem('spbm_cpl');
     if(rawBal!==null){var b=parseFloat(rawBal);if(!isNaN(b)&&b>=0) bal=b;}
     if(rawCpl!==null){var cc=parseInt(rawCpl,10);if(cc===1||cc===2||cc===3) cpl=cc;}
   }catch(e){}
   return{bal:bal,cpl:cpl};
 }
 function _savePlayerState(){
-  try{localStorage.setItem('spbm5_bal',S.bal.toFixed(2));localStorage.setItem('spbm5_cpl',String(S.cpl));}catch(e){}
+  try{localStorage.setItem('spbm_bal',S.bal.toFixed(2));localStorage.setItem('spbm_cpl',String(S.cpl));}catch(e){}
 }
 var _ps=_loadPlayerState();
 var S={bal:_ps.bal,cpl:_ps.cpl,spinning:false,lastWin:0};
@@ -1028,14 +1024,18 @@ var CURRENT_SYMS=[5,4,1];
 var CURRENT_GHOSTS=[{above2:6,above:6,sym:5,below:4,below2:6},{above2:6,above:6,sym:4,below:3,below2:2},{above2:3,above:6,sym:1,below:6,below2:4}];
 var CPL=[1,2,3];
 
-function fmt(n){return '$'+n.toFixed(2);} /* S.bal/payouts are already in dollars (S.cpl*DENOM, pay[]*DENOM) — do NOT multiply by DENOM again here */
-function fmtMoney(n){var v=parseFloat(n);if(isNaN(v))return '$0.00';var p=v.toFixed(2).split('.');p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');return '$'+p.join('.');} /* $5 denom — credits * DENOM */
-function fmtRaw(n){return '$'+n.toFixed(2);} /* raw dollar, no denom mult */
+function fmt(n){return '$'+n.toFixed(2);}
+function fmtMoney(n){
+  var v=parseFloat(n);if(isNaN(v))return '$0.00';
+  var p=v.toFixed(2).split('.');
+  p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  return '$'+p.join('.');
+}
 function updUI(){
   document.getElementById('bval').textContent=fmt(S.bal);
   _savePlayerState();
   if(typeof checkDemoTrigger==='function') checkDemoTrigger();
-  document.getElementById('betval').textContent=fmtRaw(S.cpl*DENOM);
+  document.getElementById('betval').textContent=fmt(S.cpl);
   document.getElementById('cdisp').textContent=S.cpl;
 }
 /* Refresh the spin watchdog — called at each stage of a long Red
@@ -1295,7 +1295,7 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
       rsDone++;
       if(rsDone<3) return; /* wait for all 3 reels to finish */
       setTimeout(function(){
-      var payAmt=pat.pay[cpl-1]*DENOM;
+      var payAmt=pat.pay[cpl-1];
       if(pat.isProgressive&&progCtx){
         /* Progressive Jackpot — grand finale. Reels already show 'coverall'
            symbols (just landed). Add accumulated bonusTotal + jackpot amount,
@@ -1371,23 +1371,24 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
   }
   setTimeout(playNext,200);
 }
+}
 
 /* â”€â”€ MAIN SPIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function doSpin(){
   if(S.spinning) return;
   if(Date.now()-_spinDebounce<300) return;
-  if(S.bal<S.cpl*DENOM){toast('INSERT CASH TO PLAY');return;}
+  if(S.bal<S.cpl){toast('INSERT CASH TO PLAY');return;}
   if(_reelWinH===0) initReelSlots();
-  S.spinning=true;S.bal-=S.cpl*DENOM;
+  S.spinning=true;S.bal-=S.cpl;
   var _forceJP=false;
   if(typeof Progressive!=='undefined'){
-    _forceJP=Progressive.contribute(S.cpl*DENOM);
+    _forceJP=Progressive.contribute(S.cpl);
     /* Register player on first spin — safe to call multiple times */
     Progressive.registerPlayer(null, window._playerNickname || null);
     /* Update lastSpin timestamp so operator active/inactive display stays accurate */
     if(Progressive.updateLastSpin) Progressive.updateLastSpin();
   }
-  var _spinBalBefore=S.bal+S.cpl*DENOM; var _spinCardSerial=BG.cardSerial;
+  var _spinBalBefore=S.bal+S.cpl; var _spinCardSerial=BG.cardSerial;
   setWin(0,'');document.getElementById('bt-box').classList.remove('on');
   updUI();setCtrl(false);
   stopPatternCycle();
@@ -1949,7 +1950,6 @@ function initProgressiveMeter(){
     }
     setTimeout(function(){ sizeLayout(); }, 50);
   });
-
 }
 
 /* -- INIT -- */
@@ -2005,5 +2005,4 @@ document.getElementById('ic-no').addEventListener('click',function(){document.ge
 document.querySelectorAll('.icpre').forEach(function(btn){btn.addEventListener('click',function(){var a=parseFloat(btn.getAttribute('data-a'));var _ciBalP=S.bal;S.bal+=a;opLog({type:'CASH_IN',amount:a,balBefore:_ciBalP,balAfter:S.bal});updUI();toast(fmt(a)+' ADDED');sndCreditsAddUp();document.getElementById('ic-ov').classList.remove('on');});});
 document.getElementById('ic-ov').addEventListener('click',function(e){if(e.target===this)this.classList.remove('on');});
 
-}();
-
+}());

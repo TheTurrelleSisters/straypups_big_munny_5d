@@ -1,7 +1,7 @@
 {
-  "name": "StrayPups Big Munny $5",
-  "short_name": "StrayPups $5",
-  "description": "StrayPups Big Munny — $5 Denomination",
+  "name": "StrayPups Big Munny $1",
+  "short_name": "StrayPups $1",
+  "description": "StrayPups Big Munny — $1 Denomination",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",

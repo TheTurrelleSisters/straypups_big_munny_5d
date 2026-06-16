@@ -6,14 +6,14 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
-<title>StrayPups Big Munny $5 v5.90</title>
+<title>StrayPups Big Munny v5.94</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#08000f">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="StrayPups $5">
+<meta name="apple-mobile-web-app-title" content="StrayPups $1">
 <link rel="stylesheet" href="css/styles.css?v=5.90">
 </head>
 <body>
@@ -29,7 +29,7 @@
   <div id="splash-bg"></div>
   <div id="splash-foot">
     <div id="splash-title">STRAYPUPS BIG MUNNY</div>
-    <div id="splash-ver">$5 &bull; v5.90</div>
+    <div id="splash-ver">v5.94</div>
   <div id="splash-conn-status" style="margin-top:8px;font-size:11px;letter-spacing:2px;color:rgba(255,200,0,0.7);min-height:16px;">Connecting&hellip;</div>
   <div id="splash-ball-status" style="margin-top:3px;font-size:10px;letter-spacing:1px;color:rgba(255,200,0,0.5);min-height:14px;"></div>
     <div id="splash-bar"><div id="splash-bar-fill"></div></div>
@@ -90,7 +90,7 @@
   <div id="info-bar">
     <div class="iitem"><div class="ilbl">BALANCE</div><div class="ival" id="bval">$100.00</div></div>
     <div class="iitem"><div class="ilbl">BET</div><div class="ival" id="betval">$1.00</div></div>
-    <div class="iitem"><div class="ilbl">DENOM</div><div class="ival">$5</div></div>
+    <div class="iitem"><div class="ilbl">DENOM</div><div class="ival">$1</div></div>
   </div>
   <div id="controls">
     <div id="ctrl-top">
@@ -115,8 +115,8 @@
 <div id="ic-ov">
   <div class="ic-ttl">INSERT CASH</div>
   <div class="ic-pre-row">
+    <button class="icpre" data-a="20">$20</button><button class="icpre" data-a="50">$50</button>
     <button class="icpre" data-a="100">$100</button><button class="icpre" data-a="500">$500</button>
-    <button class="icpre" data-a="1000">$1,000</button><button class="icpre" data-a="5000">$5,000</button>
   </div>
   <div class="ic-row">
     <span style="color:var(--gold);font-size:19px">$</span>
@@ -131,9 +131,8 @@
 </div>
 
 <script>
-  var PROG_GAME_ID = 'straypups_5d';
-  var PROG_DENOM   = 5.00;
-  // Register PWA service worker
+  var PROG_GAME_ID = 'straypups_1d';
+  var PROG_DENOM   = 1.00;
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('service-worker.js').catch(function(e) {
@@ -142,12 +141,13 @@
     });
   }
 </script>
-<script src="js/progressive.js?v=5.86"></script>
-<script src="wabc.js?v=1.2"></script>
-<script src="js/config.js?v=5.90"></script>
-<script src="js/game.js?v=5.86"></script>
-<script src="js/operator.js?v=5.90"></script>
-<script src="broadcast-init.js?v=5.90"></script>
+<script src="broadcast-init.js?v=5.93"></script>
+<script src="js/progressive.js?v=5.93"></script>
+<script src="wabc.js?v=5.93"></script>
+<script src="js/config.js?v=5.93"></script>
+<script src="js/game.js?v=5.93"></script>
+<script src="js/operator.js?v=5.93"></script>
+
 <!-- lobby-promo removed -->
 
 
@@ -168,12 +168,12 @@
 
 <!-- FORCE WIN CELEBRATION — shown on winner device -->
 <div id="force-win-cel">
-  <video id="fw-video" autoplay loop muted playsinline></video>
+  <video id="fw-video" autoplay loop muted playsinline webkit-playsinline></video>
   <div id="fw-title">PROGRESSIVE JACKPOT!</div>
   <div id="fw-amt">$0.00</div>
-  <div id="fw-sub">YOU WON THE FORCE JACKPOT!</div>
-  <button id="fw-dismiss" >
-    COLLECT &#127881;
+  <div id="fw-sub" style="font-size:11px;color:#ffaa00;letter-spacing:1px;text-align:center">CONGRATULATIONS! &#127881;</div>
+  <button id="fw-dismiss">
+    COLLECT WINNINGS &#127881;
   </button>
 </div>
 
@@ -211,6 +211,7 @@
 font-size:7px;color:rgba(255,215,0,0.18);letter-spacing:2px;pointer-events:none;
 z-index:1;font-family:Arial,sans-serif;font-weight:normal">
 GOLD COINS CASINO &bull; v2.4</div>
+
 <!-- OPERATOR BROADCAST MESSAGE BANNER -->
 <div id="op-message-banner">
   <div id="op-msg-icon">&#128226;</div>
@@ -268,6 +269,6 @@ GOLD COINS CASINO &bull; v2.4</div>
   });
 }());
 </script>
-  
+
 </body>
 </html>
