@@ -8,6 +8,27 @@
 
 ---
 
+---
+
+## v5.90 — spinReel direction fix: bottom+column-reverse approach
+
+### Problem
+All previous CSS-transition spinReel attempts animated strip.top from 0 to a
+large negative value. This moves the strip UP, making symbols appear to scroll
+UPWARD — wrong direction.
+
+### Fix
+Switched to bottom+column-reverse positioning during spin:
+- strip.style.flexDirection = 'column-reverse' (reverses visual symbol order)
+- strip.style.bottom = startBottom (large positive, strip starts high)
+- Animate bottom: startBottom -> targetBottom (decreasing = strip moves DOWN)
+= symbols enter from TOP, scroll DOWNWARD through window ✓
+
+After transitionend, rest strip is rebuilt using the original top positioning
+(unchanged), so the at-rest display is unaffected.
+
+This approach matches the working preview HTML that Sasha confirmed looked correct.
+
 ## v5.89 — spinReel direction fix (compositor ordering)
 
 ### Problem
@@ -59,7 +80,7 @@ is PRESERVED — only spinReel changed.
 - Script query strings updated: game.js?v=v5.91, progressive.js?v=v5.91
 
 
-## Current Version: v5.89
+## Current Version: v5.90
 
 ---
 

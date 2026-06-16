@@ -1164,11 +1164,14 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   if(!strip||!reel){onStop();return;}
 
   var spinWin=document.getElementById('rw'+reelIdx);
-  var spinWinH=spinWin?spinWin.clientHeight:0;
-  var sH=spinWinH>0?symSlotH(spinWinH):Math.round(reel.offsetHeight*SYM_PCT);
+  var winH=spinWin?spinWin.clientHeight:0;
+  var sH=winH>0?symSlotH(winH):SLOT_H;
   if(sH<10) sH=SLOT_H;
-  var winH=spinWinH>0?spinWinH:sH*3;
+  if(winH<10) winH=sH*3;
 
+  /* Build strip: 24 random scroll symbols + 5 ghost symbols.
+     Strip uses bottom+column-reverse so symbol order reads correctly
+     and animating bottom 0->positive moves strip DOWN (symbols scroll down). */
   var SPIN_SYM_IDS=[0,1,2,3,4,5,6,7];
   var spinSyms=[];
   for(var i=0;i<24;i++) spinSyms.push(SPIN_SYM_IDS[rng.int(0,7)]);
@@ -1178,18 +1181,41 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
   spinSyms.push(finalGhost.below);
   spinSyms.push(finalGhost.below2);
 
+  /* targetBottom: position strip so ghost.sym lands on payline.
+     With column-reverse + bottom anchor:
+     ghost.sym is at index 2 from end (centerIdx = spinSyms.length-3).
+     Its bottom edge from strip bottom = centerIdx * sH.
+     Payline center from window bottom = winH/2.
+     We want ghost.sym center at payline:
+       strip.bottom + centerIdx*sH + sH/2 = winH/2
+       strip.bottom = winH/2 - sH/2 - centerIdx*sH
+     But with bottom positioning, strip starts at bottom=0 and we
+     animate to targetBottom (positive = strip moves up relative to container
+     ... wait, no. bottom=X means strip bottom edge is X px from container bottom.
+     Increasing bottom moves strip UP. We want symbols to move DOWN.
+     So start at large positive bottom, animate to small/zero bottom.
+     startBottom = targetBottom + 24*sH (strip starts higher = more bottom offset)
+     animate startBottom -> targetBottom (decreasing = strip moves DOWN) */
   var spinTopOff=Math.round(winH/2-sH*1.5);
   var centerIdx=spinSyms.length-3;
-  var targetY=spinTopOff-centerIdx*sH;
+  /* targetBottom equivalent: strip.bottom so that ghost.sym center = winH/2
+     With column-reverse, slot at index i from end sits at:
+       bottom edge from strip bottom = i * sH
+     ghost.sym is at index centerIdx from the END of spinSyms array,
+     which in column-reverse order = index centerIdx from bottom.
+     strip.bottom + centerIdx*sH = winH/2 - sH/2
+     strip.bottom = winH/2 - sH/2 - centerIdx*sH = spinTopOff */
+  var targetBottom = -spinTopOff; /* spinTopOff is negative, so targetBottom > 0 */
+  var startBottom = targetBottom + 24*sH; /* start higher, animate down */
 
-  /* Set top=0 and build strip BEFORE any class changes or compositor
-     promotion — ensures browser has a clean starting position.
-     spinning class (blur) is added inside the rAF, after top=0 is
-     committed to the layout, so it never interferes with the start. */
   strip.innerHTML='';
   strip.style.height='auto';
   strip.style.transition='none';
-  strip.style.top='0px';
+  /* Switch to bottom+column-reverse positioning */
+  strip.style.top='';
+  strip.style.bottom=startBottom+'px';
+  strip.style.flexDirection='column-reverse';
+  strip.classList.remove('spinning','stopping');
   spinSyms.forEach(function(id){
     var slot=buildSlot(id);
     slot.style.height=sH+'px';
@@ -1197,24 +1223,22 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
     strip.appendChild(slot);
   });
 
-  requestAnimationFrame(function(){
-    /* First rAF: browser has processed top=0 and the new DOM.
-       Now add blur and kick off second rAF before transitioning. */
-    reel.classList.add('spinning');
-    requestAnimationFrame(function(){
-      /* Second rAF: compositor layer is active with top=0 as baseline.
-         Now apply the transition — animates FROM 0 TO targetY (negative)
-         = strip moves UP = symbols scroll DOWNWARD through window. */
-      strip.style.transition='top '+stopDelay+'ms cubic-bezier(0.22,0.61,0.36,1)';
-      strip.style.top=targetY+'px';
+  strip.classList.add('spinning');
 
-      function onTransitionEnd(){
-        strip.removeEventListener('transitionend',onTransitionEnd);
-        reel.classList.remove('spinning');
-        reel.classList.add('stopping');
+  requestAnimationFrame(function(){
+    requestAnimationFrame(function(){
+      strip.style.transition='bottom '+stopDelay+'ms cubic-bezier(0.1,0,0.25,1)';
+      strip.style.bottom=targetBottom+'px';
+
+      function onEnd(){
+        strip.removeEventListener('transitionend',onEnd);
+        strip.classList.remove('spinning');
+        strip.classList.add('stopping');
         sndReelStop();
         strip.innerHTML='';
         strip.style.transition='none';
+        strip.style.flexDirection='';
+        strip.style.bottom='';
         var winEl=document.getElementById('rw'+reelIdx);
         var liveH=winEl?winEl.clientHeight:0;
         var winH2=liveH>0?liveH:(_reelWinH>0?_reelWinH:SLOT_H*3);
@@ -1228,12 +1252,10 @@ function spinReel(reelIdx,finalGhost,stopDelay,onStop){
           rs.style.flex='none';
           strip.appendChild(rs);
         }
-        setTimeout(function(){
-          reel.classList.remove('stopping');
-          onStop();
-        },80);
+        strip.classList.remove('stopping');
+        onStop();
       }
-      strip.addEventListener('transitionend',onTransitionEnd);
+      strip.addEventListener('transitionend',onEnd);
     });
   });
 }
