@@ -80,7 +80,7 @@ is PRESERVED — only spinReel changed.
 - Script query strings updated: game.js?v=v5.91, progressive.js?v=v5.91
 
 
-## Current Version: v5.90
+## Current Version: v5.101
 
 ---
 
@@ -195,7 +195,7 @@ Class II bingo PWA. $1 denomination. All wins determined by bingo patterns. Reel
 
 ---
 
-## Current Version: v5.54 (cache: spbm-v554)
+## Current Version: v5.101
 
 ## Pending
 - [ ] Confirm operator tools connect after presence throttle fix
@@ -1127,3 +1127,43 @@ the outer grouping `)` was missing, causing a separate parse error.
 **Fixes:** Inserted `}` to close `runRS()`, corrected `}();` → `}());`.
 
 - Cache bust: spbm5d-v594
+
+---
+
+### v5.101 — Bug Fix + Red Spin Cross-Browser Fix
+
+**Fix 1 — armAndClaim argument order (game.js):**
+`Progressive.armAndClaim(callback)` → `Progressive.armAndClaim(winPatterns, callback)`.
+winPatterns was missing as first arg. onResult was undefined, so the natural
+Cover All jackpot claim callback never fired → permanent game lockup.
+
+**Fix 2 — showJP double-tap double-callback (game.js):**
+Added `_jpDone` guard. Touch devices fire both ontouchend AND onclick on one tap,
+previously calling playNext() twice and launching two parallel Red Spin sequences.
+
+**Fix 3 — spinReel CSS transition (game.js):**
+Replaced requestAnimationFrame animation loop with CSS transition + transitionend
+event. rAF was throttled/stopped on Samsung Browser, backgrounded tabs, and
+power-saving mode, freezing Red Spin permanently with no animation. CSS transitions
+fire reliably on all browsers (Samsung Internet 4+, Chrome, Firefox, Safari, WebView).
+setTimeout fallback at stopDelay+400ms guarantees onStop always fires.
+Also applied v5.96 spinReel loop fix (spinReel calls were missing from runRS in this game — _onReelDone was defined but never triggered).
+
+**Fix 4 — _armRandomTrigger removed (progressive.js):**
+Per-spin probability roll was inserting async force_jackpot rows between spins,
+causing spin 2 to show phantom Cover All card and hang on DB claim. Removed
+entirely — replaced in v5.102 with server-side mystery threshold model.
+
+**Fix 5 — _checkArmedCommand removed (progressive.js):**
+On every init/refresh, this queried progressive_commands for armed rows,
+picking up stale rows from old testing and causing phantom Cover All on first spin.
+
+**Fix 6 — custom_card feature removed (progressive.js):**
+Dead feature that was never wired into game.js. Removed all state vars,
+subscriptions, functions, and exports.
+
+**Fix 7 — _claimForceWin double-callback guard (progressive.js):**
+Added _onceClaimed wrapper. Safety timer (8s) and DB response could both fire
+onClaimed, causing _finishProgressiveSpin to run twice.
+
+- Cache bust: spbm5d-v5101
