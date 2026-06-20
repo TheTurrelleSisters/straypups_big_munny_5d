@@ -1,9 +1,10 @@
-var CACHE = 'spbm5d-v600';
+var CACHE = 'spbm5d-v602';
 var FILES = [
   './',
   './index.html',
   './manifest.json',
   './css/styles.css',
+  './js/paytable.js',
   './js/config.js',
   './js/game.js',
   './js/operator.js',

@@ -704,7 +704,9 @@ var Progressive = (function () {
       _scheduleFlush();
     }
 
-    return _forceArmed;
+    /* v6.0: Force Jackpot removed. contribute() no longer signals forced JP.
+       Kept as no-op return for API compat. */
+    return false;
   }
 
   function claimForce(onResult) { _claimForceWin(onResult); }
@@ -943,7 +945,6 @@ var Progressive = (function () {
   return {
     init:               init,
     contribute:         contribute,
-    claimForce:         claimForce,
     armAndClaim:        armAndClaim,
     hit:                hit,
     updateLastSpin:     updateLastSpin,
