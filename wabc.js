@@ -289,6 +289,16 @@ var WABC = (function() {
   function onSyncResponse(fn)  { _syncListeners.push(fn); }
   function setPosProvider(fn)  { _posProvider = fn; }
 
+  /* applyLocalNewCall — syncs wabc.js internal state for the player who
+     triggered a new sequence. Without this, the seq_issued_at guard drops
+     all pos broadcasts for the triggering player (balls 41-75 freeze). */
+  function applyLocalNewCall(sequence, issuedAt) {
+    if (!sequence || sequence.length !== 75) return;
+    _sequence  = sequence;
+    _ballPos   = 0;
+    _issuedAt  = issuedAt || new Date().toISOString();
+  }
+
   return {
     init:          init,
     getSequence:   getSequence,

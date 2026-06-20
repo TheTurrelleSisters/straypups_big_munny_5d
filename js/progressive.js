@@ -803,13 +803,19 @@ var Progressive = (function () {
   }
   function _checkUnreadMessages() {
     _loadLastSeen();
+    /* Only replay messages from last 30 minutes — prevents login spam
+       from accumulated Cover All or stale system notifications. */
+    var _cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     _client.from('broadcast_messages').select('*')
       .gt('id', _lastSeenMessageId)
+      .gt('created_at', _cutoff)
       .not('type', 'in', '("force_local_ball","restore_wide_ball")')
       .order('id', { ascending: true })
       .then(function(res) {
         if (res.error || !res.data || !res.data.length) return;
-        res.data.forEach(function(msg, i) {
+        /* Cap replay at 3 messages max — never flood a newly-connecting player. */
+        var _msgs = res.data.slice(0, 3);
+        _msgs.forEach(function(msg, i) {
           setTimeout(function() { _notifyMessage(msg); }, i * 4000);
         });
       });

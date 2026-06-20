@@ -1167,3 +1167,56 @@ Added _onceClaimed wrapper. Safety timer (8s) and DB response could both fire
 onClaimed, causing _finishProgressiveSpin to run twice.
 
 - Cache bust: spbm5d-v5101
+
+---
+
+## ✅ CONFIRMED STABLE BASELINE — v5.105 (pre-v6.0)
+
+Last confirmed working version before v6.0 sync. WABC from Supabase working.
+
+---
+
+## v6.0 — Sync with $1 Game + All Fixes Applied
+
+**Synced from straypups_big_munny_v5_27_PWA v6.0**
+
+### Changes applied:
+
+**Pattern Showcase (double-run fix):**
+- Added `_showcaseRunning` boolean guard — only `startPatternShowcase()` sets it, only `stopPatternShowcase()` clears it
+- `_showNextPattern()` now guards on `!_showcaseRunning || GS.state!=='idle'` — stale timers die immediately
+- `sizeLayout()` now calls `startPatternShowcase()` instead of `_showNextPattern()` directly — eliminates timer stacking
+- Showcase dwell: 2500ms → 5000ms fixed. 250ms blank frame between patterns for clean transitions
+- Cell CSS transition: `.15s` → `.25s`
+
+**Red Spin pattern reveal:**
+- Pattern name and card highlight now reveal on 3rd reel stop, not before spin starts
+- Players no longer see the answer before the reels move
+
+**Cover All penny award (wrong player fix):**
+- `_broadcastCoverAll()` added — local toast + `S.bal+=0.01` only. No `broadcast_messages` insert.
+- Penny is now strictly LOCAL to the winning player only
+- `_handleCoverAll()` `hasPenny` param removed — unified single path
+- `BG.awaitingNewSeq` and `BG._coverAll75Fired` flags now correctly managed
+
+**Startup message spam fix:**
+- `_checkUnreadMessages()`: 30-minute age cutoff + 3-message replay cap
+
+**Red Spin card lock:**
+- `_activeCallNext` renderBingoCard gated on `!S.spinning` — ball ticker cannot wipe pattern highlights during Red Spin
+
+**wabc.js:**
+- `applyLocalNewCall()` added — syncs internal `_issuedAt` for Cover All triggering player, prevents balls 41-75 freeze
+
+**broadcast-init.js:**
+- Replaced with v1.4 — dead code removed (subscribeSystemCommands, handleSystemCommand, onForceNotify, showBroadcastToast)
+
+**Service worker:**
+- `scott_full.png` added to FILES cache
+- `manifest.json` added to FILES cache
+- CACHE: `spbm5d-v600`
+
+**Version:** `6.0` — all strings consistent: CACHE, title, splash-ver, all `?v=` query strings
+
+- Cache bust: spbm5d-v600
+

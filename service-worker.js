@@ -1,7 +1,8 @@
-var CACHE = 'spbm5d-v5105';
+var CACHE = 'spbm5d-v600';
 var FILES = [
   './',
   './index.html',
+  './manifest.json',
   './css/styles.css',
   './js/config.js',
   './js/game.js',
@@ -12,6 +13,7 @@ var FILES = [
   './assets/splash.jpg',
   './assets/banner.jpg',
   './assets/symbols/progressive_jackpot.png',
+  './assets/scott_full.png',
   './assets/icons/icon-192x192.png',
   './assets/icons/icon-512x512.png',
   './assets/credits_addup.wav',

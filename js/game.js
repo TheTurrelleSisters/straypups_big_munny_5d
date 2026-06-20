@@ -57,6 +57,10 @@ function sizeLayout(){
     if(!_ballNodes||_ballNodes.length<75) buildBallStrip();
     if(!_cardNodes||_cardNodes.length<25) buildBingoCardNodes();
     setTimeout(function(){ if(_reelWinH===0) initReelSlots(); },300);
+    /* Re-render showcase after card rebuild during idle — always go through
+       startPatternShowcase() so the existing timer is cleared first.
+       Direct _showNextPattern() calls stacked timers causing double-run glitch. */
+    if(GS.state==='idle') startPatternShowcase();
   },100);
 }
 
@@ -530,17 +534,23 @@ function checkDemoTrigger(){
 }
 
 /* -- PATTERN SHOWCASE (idle + demo) -- */
-var _showcaseTimer=null; var _showcaseIdx=0;
+var _showcaseTimer=null; var _showcaseIdx=0; var _showcaseRunning=false;
 function startPatternShowcase(){
-  stopPatternShowcase();
+  stopPatternShowcase();   /* always clears timer + _showcaseRunning before restart */
   _showcaseIdx=0;
+  _showcaseRunning=true;
   _showNextPattern();
 }
 function stopPatternShowcase(){
+  _showcaseRunning=false;
   if(_showcaseTimer){clearTimeout(_showcaseTimer);_showcaseTimer=null;}
 }
 function _showNextPattern(){
-  if(GS.state!=='idle'&&GS.state!=='demo') return;
+  /* Dual guard: GS.state must be idle AND _showcaseRunning must be true.
+     _showcaseRunning is only set by startPatternShowcase() and cleared by
+     stopPatternShowcase(). This prevents any stale timer from re-entering
+     the loop after it was stopped. */
+  if(!_showcaseRunning||GS.state!=='idle') return;
   var pat=BINGO_PATTERNS[_showcaseIdx%BINGO_PATTERNS.length];
   _showcaseIdx++;
   var nameEl=document.getElementById('bingo-pattern-name');
@@ -558,7 +568,12 @@ function _showNextPattern(){
   } else {
     nameEl.textContent=pat.name.toUpperCase()+' — In '+pat.balls+' Balls | $'+pat.pay[0]+'/$'+pat.pay[1]+'/$'+pat.pay[2];
   }
-  _showcaseTimer=setTimeout(_showNextPattern,2500);
+  _showcaseTimer=setTimeout(function(){
+    if(!_showcaseRunning||GS.state!=='idle') return;
+    /* Fixed 5000ms dwell — same for every pattern, enough time to read
+       name, ball threshold, and pay. No variable speeds. */
+    _showcaseTimer=setTimeout(_showNextPattern,5000);
+  },250); /* 250ms blank gap between patterns */
 }
 
 /* ── BALL CALLER LIFECYCLE ─────────────────────────────────────────────────
@@ -631,7 +646,8 @@ function _activeCallNext(){
     /* Do not overwrite the pattern showcase card during idle/demo —
        the showcase owns the card display and re-renders every 2.5s.
        Only render the live card during active spinning. */
-    if(GS.state!=='idle'&&GS.state!=='demo'){
+    /* Gate: do not overwrite card during spin/Red Spin — pattern highlights locked. */
+  if(GS.state!=='idle'&&GS.state!=='demo'&&!S.spinning){
       renderBingoCard(BG.card,BG.matchedCells,null);
     }
   }
@@ -639,7 +655,7 @@ function _activeCallNext(){
   // Cover All check (balls 41-75 entertainment phase)
   /* !BG.seqExhausted guard: for a progressive/Lazy-T spin, all 25 cells
      are ALREADY matched from the initial 40-ball cover-all setup (before
-     entertainment calling even starts), and _handleCoverAll(true) already
+     entertainment calling even starts), and _handleCoverAll() already
      ran + requested a new sequence at spin-result time. Without this
      guard, the FIRST entertainment tick (ball 41) would see
      matchedCells.length===25 again and re-trigger _handleCoverAll, which
@@ -650,29 +666,30 @@ function _activeCallNext(){
      balls 41-75 (non-progressive), seqExhausted is still false here, so
      existing behavior is unchanged. */
   if(BG.card&&Object.keys(BG.matchedCells).length===25&&!BG.seqExhausted){
-    _handleCoverAll(false); // no penny — entertainment phase
+    /* Cover All 75 — no award, sequence handled by server */; // no penny — entertainment phase
   }
 }
 
 /* -- COVER ALL HANDLER -- */
-function _handleCoverAll(hasPenny){
-  /* Cover All 75 (hasPenny=false): ball call ends naturally at ball 75.
-     The WABC Master already knows — do absolutely nothing here.
-     Let _activeCallNext continue normally to ball 75. */
-  if(!hasPenny) return;
-
-  /* Cover All 40 (hasPenny=true):
-     1. Award penny instantly
-     2. Toast notification
-     3. Signal DB to start new sequence for ALL players simultaneously.
-        If Player B covers all while Player A is mid-Red-Spin, both players
-        get the new sequence at the same time via the new_call broadcast. */
-  S.bal+=0.01;updUI();
-  toast('COVER ALL — +$0.01');
+function _handleCoverAll(){
+  /* Cover All 40: penny credited to winning player only via _broadcastCoverAll().
+     No broadcast_messages insert — other players learn of new sequence via WABC. */
   stopActiveCaller();
   BG.seqExhausted=true;
+  BG.awaitingNewSeq=true;
+  BG._coverAll75Fired=true;
   updateBallCallBadge();
   _requestNewWABCSequence();
+  _broadcastCoverAll('Cover All — 40 Balls!');
+}
+
+/* _broadcastCoverAll — credits $0.01 and shows local toast to winning player only.
+   LOCAL ONLY — no broadcast_messages insert. Prevents idle players receiving
+   misleading win banners and prevents startup message spam. */
+function _broadcastCoverAll(msg){
+  var _msg = msg || 'Cover All Achieved!';
+  toast(_msg);
+  S.bal+=0.01;updUI();
 }
 
 /* Legacy aliases so existing call sites don't break */
@@ -1288,11 +1305,10 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
     var pat=rsPatterns[seqIdx];seqIdx++;
     _refreshSpinWatchdog();
     badge.textContent='RED SPIN '+seqIdx;
-    /* Show this pattern's name + highlight its cells on the bingo card
-       while its reel animation plays. */
+    /* Clear pattern name BEFORE reels spin — player sees no answer
+       until the 3rd reel lands. Name + card reveal in _onReelDone below. */
     var _pnEl=document.getElementById('bingo-pattern-name');
-    if(_pnEl) _pnEl.textContent=pat.name.toUpperCase();
-    renderBingoCard(BG.card,BG.matchedCells,pat.cells);
+    if(_pnEl) _pnEl.textContent='\u00a0';
     var reelSyms=REEL_SYMS[pat.reel]||REEL_SYMS['none'];
     var sr=forcedSpinResult(reelSyms);
     sndBonusSpin();
@@ -1301,6 +1317,9 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
     function _onReelDone(){
       rsDone++;
       if(rsDone<3) return; /* wait for all 3 reels to finish */
+      /* Reveal pattern name + card highlight as 3rd reel lands. */
+      if(_pnEl) _pnEl.textContent=pat.name.toUpperCase();
+      renderBingoCard(BG.card,BG.matchedCells,pat.cells);
       setTimeout(function(){
       var payAmt=pat.pay[cpl-1]*DENOM;
       if(pat.isProgressive&&progCtx){
@@ -1468,7 +1487,7 @@ function doSpin(){
         _spinDebounce=Date.now();(function(){if(_spinWatchdog){clearTimeout(_spinWatchdog);_spinWatchdog=null;}})();S.spinning=false;setCtrl(true);updUI();return;
       }
 
-      if(BG._coverAll1to40){BG._coverAll1to40=false;_handleCoverAll(true);}
+      if(BG._coverAll1to40){BG._coverAll1to40=false;_handleCoverAll();}
 
       var _denom=(typeof DENOM!=='undefined'?DENOM:1);
       var basePat=winPatterns[0];
@@ -1515,7 +1534,7 @@ function doSpin(){
 
       // ── Normal (non-progressive) win ──────────────────────────────────────
       var baseAmt=basePat.pay[S.cpl-1]*_denom;
-      /* Cover All 40: penny is credited directly by _handleCoverAll(true)
+      /* Cover All 40: penny is credited directly by _handleCoverAll()
          which fires at line 1493 — do NOT add it to baseAmt here to avoid
          double-crediting. Cover All 75 has no pay. Both are excluded. */
       for(var _cwi=0;_cwi<winPatterns.length;_cwi++){
@@ -1639,7 +1658,7 @@ function renderHelp(){
 function _finishProgressiveSpin(progAmt, winPatterns, basePat, cardSerial, balBefore) {
   var _denom=(typeof DENOM!=='undefined'?DENOM:1);
 
-  /* Cover All 40 penny: already credited by _handleCoverAll(true) before
+  /* Cover All 40 penny: already credited by _handleCoverAll() before
      this function is called. pennyAmt=0 here — no double-credit. */
   var pennyAmt=0;
 
@@ -1723,7 +1742,7 @@ function showProgJP(progAmt, winPatterns, cardSerial, balBefore) {
       balBefore:balBefore, balAfter:S.bal});
 
     /* Cover All already ended the sequence and requested a fresh WABC
-       sequence for all players at spin-result time (_handleCoverAll(true),
+       sequence for all players at spin-result time (_handleCoverAll(),
        before Red Spin even started) — this is the SAME flow as any other
        cover-all/WABC switch; being a Lazy-T/progressive win doesn't change
        it. Do NOT request a second sequence here — that was redundant

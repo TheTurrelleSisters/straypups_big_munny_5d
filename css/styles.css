@@ -76,7 +76,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   -webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;
   font-family:var(--fd);font-weight:700;
   background:linear-gradient(135deg,#f5d878,#d4af37);border:2px solid #8b6914;
-  color:#1a0800;transition:background .15s;
+  color:#1a0800;transition:background .25s;
   box-shadow:inset 0 1px 0 rgba(255,255,200,.4)}
 .bc.free{color:rgba(255,255,255,.6);font-size:8px;
   background:linear-gradient(135deg,#2255cc,#0033aa)}
