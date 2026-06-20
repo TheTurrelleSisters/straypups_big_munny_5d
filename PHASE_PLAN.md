@@ -1220,3 +1220,91 @@ Last confirmed working version before v6.0 sync. WABC from Supabase working.
 
 - Cache bust: spbm5d-v600
 
+
+---
+
+## v6.01 — FULL PARITY SYNC WITH $1 GAME (post-audit)
+
+**Context:** A side-by-side audit of the $1 (source of truth, v6.0) and $5 (this
+repo) games found that the previous "v6.0 sync" was incomplete. $5 still ran
+older architecture and legacy code in several files, causing the balls 41-75
+freeze bug and other divergences. This phase replaces $5's logic files with
+denom-parameterized copies of $1's, so both games are identical except for
+DENOM/PROG_GAME_ID/title/branding.
+
+**Audit findings being fixed here:**
+
+1. `js/paytable.js` did not exist in $5 — `SYMBOL_DEFS`, `REEL_SYMS`,
+   `PAYS_SCREEN` were missing; `BINGO_PATTERNS` was hand-merged into
+   `config.js` and was missing the "Hot Dog" pattern while containing a
+   stray "Cover All 75" pattern not present in $1.
+2. `js/game.js` had no `_onServerBallPos()` — $5 was still running the old
+   client-side `_activeCallNext` setTimeout ticker instead of the
+   server-driven WABC.onChange model. This is the root cause of the
+   balls 41-75 blank/freeze bug.
+3. `js/progressive.js` was an older v1.4 snapshot — missing the heartbeat
+   (`_startHeartbeat`/`_touchLastSeen`), and still exposing the legacy
+   `claimForce`/operator Force Jackpot path that $1 removed in v5.115.
+4. `wabc.js` defined `applyLocalNewCall()` but never exported it; `game.js`
+   never called it. Half-applied fix from a previous session.
+5. `broadcast-init.js` load order was wrong (loaded last instead of first)
+   in `index.html`.
+6. `index.html` shipped the Eruda debug console (CDN script + init) in
+   production, was missing `?v=` on the manifest link, had stale
+   "FORCE JACKPOT" win-overlay text, and was missing `webkit-playsinline`
+   on the win video.
+7. `service-worker.js` cache name and FILES list needed to include
+   `paytable.js` once restored, matching $1's structure.
+8. An entire stale `assets/` subfolder contained a v5.87-era snapshot of
+   `index.html`, `service-worker.js`, `broadcast-init.js` (a version with
+   a known sequence-clobbering race bug per $1's own code comments),
+   `wabc.js`, `manifest.json`, `PHASE_PLAN.md`, `README.md`, plus orphaned
+   unused images (sasha_solo_celebrate.png, sisters.png,
+   sisters_celebrate.png, scott.png). None of this was loaded by the
+   running app but it was dead weight / a footgun for future edits.
+
+**Fix approach:** Files that should be byte-identical logic (`js/paytable.js`,
+`js/game.js`, `js/progressive.js`, `js/operator.js`, `wabc.js`,
+`broadcast-init.js`, `css/styles.css`) are copied from the $1 source of
+truth wholesale rather than patched piecemeal, to guarantee true parity.
+`index.html`, `manifest.json`, `service-worker.js`, `js/config.js` keep
+their $5-specific values (DENOM=5.00, PROG_GAME_ID='straypups_5d', title,
+branding, bet presets, reel strips/weights if tuned differently) but are
+otherwise brought in line with $1's structure/script-order/version strings.
+
+**Changes applied:**
+
+- Added `js/paytable.js` (copied from $1, no denom-specific content —
+  single source of truth for SYMBOL_DEFS/REEL_SYMS/BINGO_PATTERNS/PAYS_SCREEN)
+- `js/config.js` — stripped BINGO_PATTERNS back out (now lives solely in
+  paytable.js per the "never define elsewhere" rule); kept VSTOP_TABLE/STRIPS
+- `js/game.js` — replaced with $1's version verbatim (no denom-specific
+  logic lives in game.js; DENOM/PROG_GAME_ID come from index.html globals)
+- `js/progressive.js` — replaced with $1's v1.5 (heartbeat restored, legacy
+  Force Jackpot path removed, contribute() stubbed to false)
+- `wabc.js` — replaced with $1's version (applyLocalNewCall now exported)
+- `broadcast-init.js` — replaced with $1's v1.4
+- `js/operator.js` — confirmed already identical, left as-is
+- `css/styles.css` — replaced with $1's version (was already functionally
+  identical, now byte-identical for future-proofing)
+- `index.html` — script load order corrected to match $1
+  (broadcast-init.js → progressive.js → wabc.js → paytable.js → config.js
+  → game.js → operator.js); Eruda debug console removed; manifest link
+  `?v=6.01` added; win-overlay text genericized; `webkit-playsinline` added
+  to win video; kept $5-specific DENOM/PROG_GAME_ID/title/branding/bet presets
+- `service-worker.js` — `js/paytable.js` added to FILES; CACHE bumped to
+  `spbm5d-v601`
+- `manifest.json` — unchanged content, kept $5 branding
+- Removed stale `assets/` clutter: `assets/PHASE_PLAN.md`, `assets/README.md`,
+  `assets/index.html`, `assets/manifest.json`, `assets/service-worker.js`,
+  `assets/broadcast-init.js`, `assets/wabc.js`, `assets/bingo_pattern_mapper.html`,
+  and orphaned unused images (`sasha_solo_celebrate.png`, `sisters.png`,
+  `sisters_celebrate.png`, `scott.png`). Kept all actually-referenced assets
+  (banner.jpg, icons/, splash.jpg/wav, symbols/, videos/, ring1.mp3,
+  red_spin_music.mp3, credits_addup.wav, scott_full.png).
+- **NOT changed:** VSTOP_TABLE / STRIPS in config.js (reel math), since the
+  task scope is architectural/code parity, not RTP/math retuning. These were
+  already identical to $1's values, so no action was needed here.
+
+**Version:** `6.01` — CACHE, splash-ver, all `?v=` strings consistent.
+

@@ -1,4 +1,4 @@
-var CACHE = 'spbm5d-v602';
+var CACHE = 'spbm5d-v601';
 var FILES = [
   './',
   './index.html',
@@ -41,9 +41,7 @@ self.addEventListener('fetch', function(e) {
   var url = e.request.url;
   if (url.indexOf('supabase.co') !== -1) return;
   if (url.indexOf('.js')          !== -1 ||
-      url.indexOf('.html')        !== -1 ||
-      url.indexOf('jsdelivr.net') !== -1 ||
-      url.indexOf('cdn.')         !== -1) {
+      url.indexOf('.html')        !== -1) {
     e.respondWith(
       fetch(e.request)
         .then(function(resp) {

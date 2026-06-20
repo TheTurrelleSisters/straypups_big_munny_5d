@@ -160,8 +160,15 @@ var WABC = (function() {
       .on('broadcast', { event: 'pos' }, function(msg) {
         if (!msg || !msg.payload) return;
         var p = msg.payload;
-        /* Guard: ignore stale sequence updates */
-        if (p.seq_issued_at && _issuedAt && p.seq_issued_at !== _issuedAt) return;
+        /* Guard: ignore pos events from a different sequence.
+           Normalize both timestamps before comparing — Postgres returns
+           "2026-06-20 00:33:58+00" while REST API returns
+           "2026-06-20T00:33:58+00:00". Strip to first 19 chars for comparison. */
+        if (p.seq_issued_at && _issuedAt) {
+          var _pNorm = String(p.seq_issued_at).replace('T',' ').substr(0,19);
+          var _iNorm = String(_issuedAt).replace('T',' ').substr(0,19);
+          if (_pNorm !== _iNorm) return;
+        }
         _ballPos = parseInt(p.pos, 10) || 0;
         _notifyChange();
       })
@@ -191,7 +198,11 @@ var WABC = (function() {
         /* Another player answered our sync_request with their live position. */
         if (!msg || !msg.payload || _syncResolved) return;
         var p = msg.payload;
-        if (p.seq_issued_at && _issuedAt && p.seq_issued_at !== _issuedAt) return;
+        if (p.seq_issued_at && _issuedAt) {
+          var _pNorm = String(p.seq_issued_at).replace('T',' ').substr(0,19);
+          var _iNorm = String(_issuedAt).replace('T',' ').substr(0,19);
+          if (_pNorm !== _iNorm) return;
+        }
         var pos = parseInt(p.pos, 10) || 0;
         if (pos > _ballPos) {
           _ballPos = pos;
@@ -222,6 +233,16 @@ var WABC = (function() {
         if (status === 'SUBSCRIBED') {
           _reconnectDelay = 2000;
           if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+          /* Re-fetch sequence on reconnect. Only notify new_call if
+             issued_at changed (genuinely new sequence) — not on every
+             reconnect, which was causing ball strip to fill pre-spin. */
+          var _prevIssuedAt = _issuedAt;
+          _fetchInitial(function() {
+            if (_issuedAt !== _prevIssuedAt) {
+              _notifyNewCall(); /* new sequence issued while disconnected */
+            }
+            console.log('[WABC] Reconnected — sequence re-fetched, pos=' + _ballPos);
+          });
           console.log('[WABC] Broadcast channel connected');
         }
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -289,9 +310,17 @@ var WABC = (function() {
   function onSyncResponse(fn)  { _syncListeners.push(fn); }
   function setPosProvider(fn)  { _posProvider = fn; }
 
-  /* applyLocalNewCall — syncs wabc.js internal state for the player who
-     triggered a new sequence. Without this, the seq_issued_at guard drops
-     all pos broadcasts for the triggering player (balls 41-75 freeze). */
+  /* applyLocalNewCall — for the player who TRIGGERED a new sequence
+     (e.g. via upsert_ball_call on Cover All). The 'wabc-ballpos' channel
+     is broadcast.self=false, so this player never receives their own
+     new_call broadcast and onNewCall() never fires for them. Without
+     this, their internal _issuedAt stays stale, and the 'pos' broadcast
+     guard (which drops any event whose seq_issued_at doesn't match
+     _issuedAt) silently filters out every future ball-position update,
+     freezing their strip at ball 40 even though they're not "awaiting".
+     Caller is responsible for its own UI update — this only syncs the
+     internal state used by the seq_issued_at guard, and does NOT fire
+     the onNewCall listeners (the caller already handled its own UI). */
   function applyLocalNewCall(sequence, issuedAt) {
     if (!sequence || sequence.length !== 75) return;
     _sequence  = sequence;
@@ -310,7 +339,8 @@ var WABC = (function() {
     onForceLocal:  onForceLocal,
     onRestoreWide: onRestoreWide,
     onSyncResponse: onSyncResponse,
-    setPosProvider: setPosProvider
+    setPosProvider: setPosProvider,
+    applyLocalNewCall: applyLocalNewCall
   };
 
 }());

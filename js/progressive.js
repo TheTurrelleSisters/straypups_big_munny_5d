@@ -1,18 +1,8 @@
 /*
  * progressive.js — Virtual Progressive Controller
  * Stray-Pup LLC / The Turrelle Sisters LLC
- * v1.4 — Server ball call, player registry, offline fallback
+ * v1.5 — Ball call stubs removed (WABC is sole source). Dead code cleanup.
  * ES5 only. No arrow functions. No const/let. No backticks.
- *
- * CHANGES FROM v1.3:
- *   - getBallCall(cb): fetches server ball sequence via RPC,
- *     falls back to local CSPRNG if offline or RPC fails.
- *   - registerPlayer(cb): registers session → Player N in DB,
- *     falls back to local counter if offline.
- *   - refreshBallCall(): called when ball 75 exhausted,
- *     fetches new server sequence or generates locally.
- *   - isOnline(): live connectivity check used throughout.
- *   - All offline fallbacks are seamless — game never stalls.
  */
 
 var SUPABASE_URL      = 'https://gdmmoeggkqsvqnqyrubx.supabase.co';
@@ -73,11 +63,14 @@ var Progressive = (function () {
   var _usingServerBalls  = false; /* true when currently using server sequence */
   var _ballCallListeners = [];    /* callbacks when new sequence arrives */
 
-  /* ── Force jackpot state ── */
+  /* ── Progressive jackpot claim state ── */
+  /* _forceArmed/_forceCommandId/_forceClaimed used by armAndClaim() + _claimForceWin()
+     as a race guard between simultaneous natural Lazy-T hits from multiple players.
+     v5.115: operator-triggered Force Jackpot feature removed — these vars now serve
+     ONLY the natural jackpot race-protection path. */
   var _forceArmed        = false;
   var _forceCommandId    = null;
   var _forceClaimed      = false;
-  var _onForceNotifyListeners = [];
   var _justWon           = false;
 
   /* ── Local fallback RNG (mirrors game.js RNG) ── */
@@ -94,12 +87,6 @@ var Progressive = (function () {
     }
     return { next: next, int: int, shuffle: shuffle };
   }());
-
-  function _localBallShuffle() {
-    var balls = [];
-    for (var i = 1; i <= 75; i++) balls.push(i);
-    return _rng.shuffle(balls);
-  }
 
   /* ── Connectivity check ── */
   function _isOnline() {
@@ -147,35 +134,6 @@ var Progressive = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     BALL CALL — SERVER + OFFLINE FALLBACK
-     ═══════════════════════════════════════════════════════════════ */
-
-  /*
-   * getBallCall(cb) — v5.39 WABC migration.
-   * Ball sequences are now owned by the WABC operator and delivered via
-   * Supabase Broadcast through wabc.js. This function returns a local
-   * shuffle immediately; wabc.js will sync the real sequence via WABC.onChange().
-   * cb(sequence, isServer, ballPos) — isServer always false from this path.
-   */
-  function getBallCall(cb) {
-    var local = _localBallShuffle();
-    _usingServerBalls = false;
-    if (cb) cb(local, false, 0);
-  }
-
-  /*
-   * refreshBallCall(cb) — v5.39 WABC migration.
-   * New sequences are now issued by the WABC operator and broadcast via wabc.js.
-   * Returns a local shuffle immediately as placeholder; WABC.onNewCall() will
-   * deliver the real new sequence to all connected players simultaneously.
-   */
-  function refreshBallCall(cb) {
-    var local = _localBallShuffle();
-    _usingServerBalls = false;
-    if (cb) cb(local, false, 0);
-  }
-
-  /* ═══════════════════════════════════════════════════════════════
      PLAYER REGISTRATION
      ═══════════════════════════════════════════════════════════════ */
 
@@ -206,6 +164,7 @@ var Progressive = (function () {
       _playerNum       = _localPlayerCounter++;
       _playerLabel     = 'Player ' + _playerNum;
       _playerRegistered = true;
+      _startHeartbeat();
       console.warn('[Progressive] registerPlayer offline — assigned ' + _playerLabel + ' locally');
       if (cb) cb(_playerNum, _playerLabel);
       return;
@@ -219,6 +178,7 @@ var Progressive = (function () {
       _playerLabel     = 'Player ' + _playerNum + ' (local)';
       _playerRegistered = true;
       _cbFired = true;
+      _startHeartbeat();
       console.warn('[Progressive] registerPlayer timeout — using local label');
       if (cb) cb(_playerNum, _playerLabel);
     }, 4000);
@@ -241,6 +201,7 @@ var Progressive = (function () {
       }
       _playerRegistered = true;
       _cbFired = true;
+      _startHeartbeat();
       if (cb) cb(_playerNum, _playerLabel);
     }).catch(function (err) {
       clearTimeout(_timer);
@@ -250,6 +211,7 @@ var Progressive = (function () {
       _playerLabel     = 'Player ' + _playerNum + ' (local)';
       _playerRegistered = true;
       _cbFired = true;
+      _startHeartbeat();
       if (cb) cb(_playerNum, _playerLabel);
     });
   }
@@ -263,6 +225,9 @@ var Progressive = (function () {
   var _lastSpinTrackTime = 0;
   var _lastSpinTime      = null;
   var _TRACK_THROTTLE_MS = 30000; /* Only broadcast presence every 30s max */
+  var _heartbeatTimer    = null;
+  var _HEARTBEAT_MS      = 20000; /* Touch last_seen every 20s — keeps ball
+                                     caller active between spins */
 
   function updateLastSpin() {
     if (!_playerRegistered) return;
@@ -300,6 +265,34 @@ var Progressive = (function () {
           console.warn('[Progressive] touch_player_last_seen catch:', err);
         });
     }
+  }
+
+  /* _touchLastSeen — lightweight DB ping, no throttle.
+     Called by heartbeat every 20s so advance_ball_call() always
+     sees an active player and keeps the ball caller running. */
+  function _touchLastSeen() {
+    if (!_client || !_connected || !_sessionKey) return;
+    _client.rpc('touch_player_last_seen', { p_session_key: _sessionKey })
+      .then(function(res) {
+        if (res.error) console.warn('[Progressive] heartbeat touch error:', res.error.message);
+      })
+      .catch(function(err) {
+        console.warn('[Progressive] heartbeat touch catch:', err);
+      });
+  }
+
+  /* _startHeartbeat — begins the 20-second last_seen heartbeat.
+     Called once after player registers. Stops on page unload. */
+  function _startHeartbeat() {
+    if (_heartbeatTimer) return; /* already running */
+    _touchLastSeen(); /* touch immediately on register */
+    _heartbeatTimer = setInterval(function() {
+      _touchLastSeen();
+    }, _HEARTBEAT_MS);
+  }
+
+  function _stopHeartbeat() {
+    if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
   }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -418,6 +411,7 @@ var Progressive = (function () {
     if (typeof window !== 'undefined') {
       window.addEventListener('offline', function() { if (!_localMode) _goLocalMode(); });
       window.addEventListener('online',  function() { setTimeout(function() { if (_localMode) _goOnlineMode(); }, 1000); });
+      window.addEventListener('beforeunload', function() { _stopHeartbeat(); });
     }
   }
 
@@ -529,12 +523,10 @@ var Progressive = (function () {
     _forceClaimed = true;
     var hitAmt    = parseFloat(_localValue.toFixed(2));
 
-    /* v5.85: derive the actual pattern(s) achieved + winner label for this
-       hit record. If winPatterns is provided (natural Lazy-T win, passed
-       from armAndClaim), record the real patterns. Otherwise (genuine
-       operator-initiated Force Jackpot via claimForce(), called before
-       winPatterns exists for this spin) keep 'Force Jackpot' — that
-       accurately describes how the hit was triggered. */
+    /* Derive the actual pattern(s) achieved + winner label for this hit record.
+       winPatterns always provided (natural Lazy-T win from armAndClaim).
+       v5.115: operator Force Jackpot removed — fallback 'Force Jackpot'
+       label kept as safety net only, should never fire in normal play. */
     var _winnerLabel = _playerNickname || _playerLabel || _sessionKey;
     var _patternName, _winPatternsStr;
     if (winPatterns && winPatterns.length) {
@@ -549,8 +541,6 @@ var Progressive = (function () {
       _winPatternsStr = 'Force Jackpot';
     }
 
-    /* Guard: safety timer and DB response can both call onClaimed.
-       _once wrapper ensures it only fires once. */
     var _cfwCalled=false;
     function _onceClaimed(didWin,amt){
       if(_cfwCalled) return; _cfwCalled=true; onClaimed(didWin,amt);
@@ -634,7 +624,9 @@ var Progressive = (function () {
         });
       }).catch(function () {
         clearTimeout(_safetyTimer);
-        _forceClaimed = false;
+        _forceClaimed   = false;
+        _forceArmed     = false;
+        _forceCommandId = null;
         _onceClaimed(false);
       });
   }
@@ -704,12 +696,10 @@ var Progressive = (function () {
       _scheduleFlush();
     }
 
-    /* v6.0: Force Jackpot removed. contribute() no longer signals forced JP.
-       Kept as no-op return for API compat. */
+    /* v5.115: _forceArmed return removed — contribute() no longer used
+       to trigger Force Jackpot. Kept as no-op return for API compat. */
     return false;
   }
-
-  function claimForce(onResult) { _claimForceWin(onResult); }
 
   function hit(info, onDone) {
     if (_localMode) {
@@ -780,6 +770,7 @@ var Progressive = (function () {
      BROADCAST MESSAGES (unchanged from v1.3)
      ═══════════════════════════════════════════════════════════════ */
   var _messageListeners  = [];
+  var _onForceNotifyListeners = [];
   var _lastSeenMessageId = 0;
   var _SEEN_KEY          = 'prog_last_msg_' + PROG_GAME_ID;
 
@@ -805,8 +796,12 @@ var Progressive = (function () {
   }
   function _checkUnreadMessages() {
     _loadLastSeen();
-    /* Only replay messages from last 30 minutes — prevents login spam
-       from accumulated Cover All or stale system notifications. */
+    /* Only replay messages from the last 30 minutes — prevents players
+       who were offline for hours/days from receiving a backlog of stale
+       Cover All or system notifications that are no longer relevant.
+       Cover All events no longer insert into broadcast_messages (v6.0),
+       but this age guard protects against any historical rows and future
+       message types that should not replay on login. */
     var _cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     _client.from('broadcast_messages').select('*')
       .gt('id', _lastSeenMessageId)
@@ -815,7 +810,9 @@ var Progressive = (function () {
       .order('id', { ascending: true })
       .then(function(res) {
         if (res.error || !res.data || !res.data.length) return;
-        /* Cap replay at 3 messages max — never flood a newly-connecting player. */
+        /* Cap replay at 3 messages max — never flood a newly-connecting
+           player with a long queue of banners regardless of how many
+           legitimate messages accumulated while they were away. */
         var _msgs = res.data.slice(0, 3);
         _msgs.forEach(function(msg, i) {
           setTimeout(function() { _notifyMessage(msg); }, i * 4000);
@@ -860,14 +857,12 @@ var Progressive = (function () {
       if (onResult) onResult(true, parseFloat(_localValue.toFixed(2)));
     }, 5000);
 
-    /* v5.88: if a force_jackpot is ALREADY armed (operator's manual Force
-       Jackpot, or the random-trigger mechanism) and not yet claimed, claim
-       THAT existing command instead of inserting a new one. This is what
-       makes operator/random-triggered jackpots converge with this spin's
-       naturally-generated winning card: the trigger only pre-armed a
-       command; THIS spin's Lazy-T (landing because the card was biased via
-       genBiasedBingoCard) claims it once it lands, exactly like any other
-       natural win. */
+    /* Race guard: if another player's natural Lazy-T hit already armed a
+       progressive_commands row before this player's spin completes, claim
+       THAT existing command instead of inserting a duplicate. Prevents two
+       simultaneous natural Lazy-T winners both inserting competing rows.
+       v5.115: operator Force Jackpot removed — this guard is now solely
+       for simultaneous natural-hit race protection. */
     if (_forceArmed && _forceCommandId && !_forceClaimed) {
       _claimForceWin(function(didWin, claimedAmt) {
         clearTimeout(_safetyTimer); _armed = true;
@@ -948,8 +943,6 @@ var Progressive = (function () {
     armAndClaim:        armAndClaim,
     hit:                hit,
     updateLastSpin:     updateLastSpin,
-    getBallCall:        getBallCall,
-    refreshBallCall:    refreshBallCall,
     registerPlayer:     registerPlayer,
     mustHit:            mustHit,
     getDisplay:         getDisplay,

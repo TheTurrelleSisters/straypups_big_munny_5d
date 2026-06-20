@@ -10,7 +10,7 @@
 
 (function () {
 
-  /* ─── Wire Progressive message handler ────────────────────────────── */
+  /* ─── Wire Progressive message handler ────────────────────── */
   /* Progressive.onMessage() is registered in index.html (op-message-banner).
      No second handler needed here — single display, no duplicate toasts. */
   function wireHandlers() {

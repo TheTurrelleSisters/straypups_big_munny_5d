@@ -6,18 +6,16 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
-<title>StrayPups Big Munny $5 v6.02</title>
+<title>StrayPups Big Munny $5 v6.01</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#08000f">
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="manifest.json?v=6.01">
 <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="StrayPups $5">
 <link rel="stylesheet" href="css/styles.css?v=6.01">
-  <!-- Eruda: on-device console for mobile debugging. REMOVE before production. -->
-  <script src="https://cdn.jsdelivr.net/npm/eruda@3/eruda.min.js"></script>
-  <script>eruda.init();</script>
+  <!-- Eruda: on-device console for mobile debugging. REMOVE after Red Spin freeze is diagnosed. -->
 </head>
 <body>
 <div id="asset-store">
@@ -32,7 +30,7 @@
   <div id="splash-bg"></div>
   <div id="splash-foot">
     <div id="splash-title">STRAYPUPS BIG MUNNY</div>
-    <div id="splash-ver">$5 &bull; v6.02</div>
+    <div id="splash-ver">$5 &bull; v6.01</div>
   <div id="splash-conn-status" style="margin-top:8px;font-size:11px;letter-spacing:2px;color:rgba(255,200,0,0.7);min-height:16px;">Connecting&hellip;</div>
   <div id="splash-ball-status" style="margin-top:3px;font-size:10px;letter-spacing:1px;color:rgba(255,200,0,0.5);min-height:14px;"></div>
     <div id="splash-bar"><div id="splash-bar-fill"></div></div>
@@ -136,7 +134,6 @@
 <script>
   var PROG_GAME_ID = 'straypups_5d';
   var PROG_DENOM   = 5.00;
-  // Register PWA service worker
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('service-worker.js').catch(function(e) {
@@ -145,13 +142,14 @@
     });
   }
 </script>
-<script src="js/paytable.js?v=6.01"></script>
+<script src="broadcast-init.js?v=6.01"></script>
 <script src="js/progressive.js?v=6.01"></script>
 <script src="wabc.js?v=6.01"></script>
-<script src="js/config.js?v=6.01"></script>
+<script src="js/paytable.js?v=6.01"></script>
+  <script src="js/config.js?v=6.01"></script>
 <script src="js/game.js?v=6.01"></script>
 <script src="js/operator.js?v=6.01"></script>
-<script src="broadcast-init.js?v=6.01"></script>
+
 <!-- lobby-promo removed -->
 
 
@@ -172,12 +170,12 @@
 
 <!-- FORCE WIN CELEBRATION — shown on winner device -->
 <div id="force-win-cel">
-  <video id="fw-video" autoplay loop muted playsinline></video>
+  <video id="fw-video" autoplay loop muted playsinline webkit-playsinline></video>
   <div id="fw-title">PROGRESSIVE JACKPOT!</div>
   <div id="fw-amt">$0.00</div>
-  <div id="fw-sub">YOU WON THE FORCE JACKPOT!</div>
-  <button id="fw-dismiss" >
-    COLLECT &#127881;
+  <div id="fw-sub" style="font-size:11px;color:#ffaa00;letter-spacing:1px;text-align:center">CONGRATULATIONS! &#127881;</div>
+  <button id="fw-dismiss">
+    COLLECT WINNINGS &#127881;
   </button>
 </div>
 
@@ -215,6 +213,7 @@
 font-size:7px;color:rgba(255,215,0,0.18);letter-spacing:2px;pointer-events:none;
 z-index:1;font-family:Arial,sans-serif;font-weight:normal">
 GOLD COINS CASINO &bull; v2.4</div>
+
 <!-- OPERATOR BROADCAST MESSAGE BANNER -->
 <div id="op-message-banner">
   <div id="op-msg-icon">&#128226;</div>
@@ -272,6 +271,6 @@ GOLD COINS CASINO &bull; v2.4</div>
   });
 }());
 </script>
-  
+
 </body>
 </html>

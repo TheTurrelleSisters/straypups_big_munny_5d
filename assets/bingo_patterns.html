@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StrayPups Big Munny — Bingo Pattern Reference</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0f;
+    color: #f0e6c8;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    padding: 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: #ffd700;
+    text-shadow: 0 0 12px #ffd70088;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 11px;
+    color: #888;
+    letter-spacing: 2px;
+    margin-bottom: 24px;
+    text-transform: uppercase;
+  }
+  .section-title {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #ffd700;
+    border-bottom: 1px solid #ffd70044;
+    padding-bottom: 6px;
+    margin: 24px 0 14px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: #12121c;
+    border: 1px solid #2a2a3a;
+    border-radius: 8px;
+    padding: 10px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: #ffd70066; }
+  .card.jackpot { border-color: #ff6600; background: #1a0e00; }
+  .card.progressive { border-color: #ffd700; background: #1a1500; }
+  .card.coverall { border-color: #00ffcc; background: #001a15; }
+  .card-name {
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #ffd700;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card.jackpot .card-name { color: #ff9900; }
+  .card.progressive .card-name { color: #ffd700; }
+  .card.coverall .card-name { color: #00ffcc; }
+  .card-meta {
+    font-size: 9px;
+    color: #666;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  }
+  .bingo-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+  .col-headers {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    margin-bottom: 3px;
+  }
+  .col-h {
+    text-align: center;
+    font-size: 9px;
+    font-weight: bold;
+    color: #888;
+    letter-spacing: 1px;
+  }
+  .cell {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background: #1e1e2e;
+    border: 1px solid #2a2a3a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7px;
+    color: #444;
+  }
+  .cell.active {
+    background: #2244aa;
+    border-color: #4466dd;
+    color: #fff;
+    font-weight: bold;
+  }
+  .cell.free {
+    background: #1a2a1a;
+    border-color: #2a4a2a;
+    color: #4a8a4a;
+    font-size: 7px;
+  }
+  .cell.active.free {
+    background: #1a4a1a;
+    border-color: #44aa44;
+    color: #88ff88;
+  }
+  .card.jackpot .cell.active { background: #662200; border-color: #ff6600; }
+  .card.progressive .cell.active { background: #333300; border-color: #ffd700; }
+  .card.coverall .cell.active { background: #003322; border-color: #00ffcc; }
+  .pay-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+    font-size: 9px;
+    color: #666;
+  }
+  .pay-val { color: #aaa; }
+  .balls-badge {
+    display: inline-block;
+    background: #1e2e1e;
+    border: 1px solid #2a4a2a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 8px;
+    color: #5a9a5a;
+    letter-spacing: 0.5px;
+  }
+  .reel-badge {
+    display: inline-block;
+    background: #1e1e2e;
+    border: 1px solid #2a2a4a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 8px;
+    color: #6688bb;
+    letter-spacing: 0.5px;
+    margin-left: 4px;
+  }
+</style>
+</head>
+<body>
+
+<h1>StrayPups Big Munny</h1>
+<div class="subtitle">Bingo Pattern Reference — All 23 Patterns</div>
+
+<script>
+const PATTERNS = [
+  // JACKPOT
+  {name:'Corporal Stripes', balls:27, pay:[800,1600,2500], reel:'jp',       cells:[2,6,7,8,10,11,12,13,14,15,19], type:'jackpot'},
+  // HIGH PAYS
+  {name:'Cross Corners',    balls:29, pay:[320,640,960],   reel:'7w4',      cells:[0,4,7,11,12,13,17,20,24],      type:'high'},
+  {name:'Pyramid',          balls:29, pay:[160,320,480],   reel:'7w2',      cells:[12,16,17,18,20,21,22,23,24],   type:'high'},
+  {name:'The Kite',         balls:35, pay:[160,320,480],   reel:'3bw4',     cells:[0,1,2,5,6,7,10,11,12,18,24],  type:'high'},
+  {name:'Double Cross',     balls:28, pay:[80,160,240],    reel:'7',        cells:[2,6,7,8,12,16,17,18,22],       type:'high'},
+  {name:'Arrowhead',        balls:30, pay:[80,160,240],    reel:'3bw2',     cells:[2,6,7,8,10,12,14,17,22],       type:'high'},
+  {name:'G Flat',           balls:36, pay:[40,80,120],     reel:'3b',       cells:[2,3,4,7,12,15,16,17,20,21,22], type:'high'},
+  {name:'Make Cents',       balls:29, pay:[40,80,120],     reel:'spchch',   cells:[2,6,7,8,11,12,16,17,18,22],   type:'high'},
+  {name:'Four Leaf Clover', balls:34, pay:[100,200,300],   reel:'2bw4',     cells:[1,5,6,7,11,13,17,18,19,23],   type:'high'},
+  {name:'Valentine',        balls:37, pay:[50,100,150],    reel:'2bw2',     cells:[4,6,8,10,12,14,16,18,20,22],  type:'high'},
+  // MID PAYS
+  {name:'Tee',              balls:38, pay:[20,40,60],      reel:'1bw2',     cells:[0,1,2,3,4,7,12,17,22],        type:'mid'},
+  {name:'Poodle Dog',       balls:35, pay:[20,40,60],      reel:'spspch',   cells:[0,1,6,11,12,13,14,16,18,21,23], type:'mid'},
+  {name:'Christmas Tree',   balls:38, pay:[25,50,75],      reel:'2b',       cells:[2,6,7,8,10,11,12,13,14,17,22], type:'mid'},
+  {name:'Private Stripes',  balls:30, pay:[12,24,36],      reel:'1b',       cells:[2,6,8,10,14],                  type:'mid'},
+  {name:'Stepladder',       balls:36, pay:[10,20,30],      reel:'spmb',     cells:[4,7,8,12,15,16,20],            type:'mid'},
+  {name:'Hopscotch',        balls:38, pay:[10,20,30],      reel:'spch',     cells:[1,3,7,11,13,17,21,23],         type:'mid'},
+  {name:'Baby Buggy',       balls:35, pay:[10,20,30],      reel:'ch3',      cells:[3,4,8,10,11,12,13,15,16,17,18,21,23], type:'mid'},
+  // LOW PAYS
+  {name:'Small Diamond',    balls:38, pay:[5,10,15],       reel:'mb',       cells:[7,11,12,13,17],                type:'low'},
+  {name:'EII',              balls:38, pay:[4,8,12],        reel:'ch2',      cells:[0,5,10,15,20,21,22,23,24],     type:'low'},
+  {name:'Open Diamond',     balls:38, pay:[2,4,6],         reel:'ch1',      cells:[2,10,12,14,22],                type:'low'},
+  // PROGRESSIVE
+  {name:'Lazy-T (Progressive)', balls:25, pay:[0,0,0],    reel:'coverall', cells:[4,9,10,11,12,13,14,19,24],    type:'progressive'},
+  // COVER ALL
+  {name:'Cover All 40',     balls:40, pay:[0.01,0.01,0.01], reel:null,    cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], type:'coverall'},
+  {name:'Cover All 75',     balls:75, pay:[0,0,0],          reel:null,    cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24], type:'coverall'},
+];
+
+const COLS = ['B','I','N','G','O'];
+const SECTIONS = [
+  { label: '★ Jackpot', types: ['jackpot'] },
+  { label: 'High Pays', types: ['high'] },
+  { label: 'Mid Pays',  types: ['mid'] },
+  { label: 'Low Pays',  types: ['low'] },
+  { label: '★ Progressive Jackpot', types: ['progressive'] },
+  { label: '★ Cover All Rules', types: ['coverall'] },
+];
+
+function renderCard(p) {
+  const cellSet = new Set(p.cells);
+  let cells = '';
+  for (let i = 0; i < 25; i++) {
+    const isFree = i === 12;
+    const isActive = cellSet.has(i) || isFree;
+    const cls = ['cell', isActive ? 'active' : '', isFree ? 'free' : ''].filter(Boolean).join(' ');
+    const label = isFree ? '★' : '';
+    cells += `<div class="${cls}">${label}</div>`;
+  }
+
+  const payStr = p.pay[0] === 0 && p.pay[1] === 0 && p.pay[2] === 0
+    ? (p.type === 'progressive' ? 'Progressive Pot' : 'No Pay')
+    : `$${p.pay[0]} / $${p.pay[1]} / $${p.pay[2]}`;
+
+  const isSpecial = p.type === 'coverall' || p.type === 'progressive';
+
+  return `
+    <div class="card ${p.type === 'jackpot' ? 'jackpot' : p.type === 'progressive' ? 'progressive' : p.type === 'coverall' ? 'coverall' : ''}">
+      <div class="card-name">${p.name}</div>
+      <div class="card-meta">
+        <span class="balls-badge">≤${p.balls} balls</span>
+        ${p.reel ? `<span class="reel-badge">${p.reel}</span>` : ''}
+      </div>
+      <div class="col-headers">${COLS.map(c=>`<div class="col-h">${c}</div>`).join('')}</div>
+      <div class="bingo-grid">${cells}</div>
+      <div class="pay-row">
+        <span>Pay:</span>
+        <span class="pay-val">${payStr}</span>
+      </div>
+    </div>`;
+}
+
+const container = document.createElement('div');
+for (const section of SECTIONS) {
+  const pats = PATTERNS.filter(p => section.types.includes(p.type));
+  if (!pats.length) continue;
+  const sec = document.createElement('div');
+  sec.innerHTML = `<div class="section-title">${section.label}</div><div class="grid">${pats.map(renderCard).join('')}</div>`;
+  container.appendChild(sec);
+}
+document.body.appendChild(container);
+</script>
+
+</body>
+</html>

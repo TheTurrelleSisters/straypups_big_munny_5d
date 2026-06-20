@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pattern vs Reel Stop Audit</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#0a0a0f;color:#f0e6c8;font-family:Arial,sans-serif;padding:16px;min-height:100vh;}
+h1{text-align:center;color:#ffd700;font-size:20px;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px;}
+.sub{text-align:center;color:#555;font-size:10px;letter-spacing:2px;margin-bottom:20px;text-transform:uppercase;}
+
+/* Pattern selector */
+.selector{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px;justify-content:center;}
+.pat-btn{
+  background:#12121c;border:1px solid #2a2a3a;border-radius:6px;
+  padding:6px 10px;cursor:pointer;font-size:10px;font-weight:bold;
+  letter-spacing:1px;text-transform:uppercase;color:#888;
+  transition:all .15s;white-space:nowrap;
+}
+.pat-btn:hover{border-color:#ffd70066;color:#ffd700;}
+.pat-btn.active{background:#1a1500;border-color:#ffd700;color:#ffd700;
+  box-shadow:0 0 8px #ffd70033;}
+.pat-btn.jackpot{border-color:#ff660044;color:#ff8844;}
+.pat-btn.jackpot.active{background:#1a0800;border-color:#ff6600;color:#ff9900;}
+.pat-btn.progressive{border-color:#ffd70044;}
+.pat-btn.coverall{border-color:#00ffcc44;color:#44ccaa;}
+.pat-btn.coverall.active{background:#001a15;border-color:#00ffcc;color:#00ffcc;}
+
+/* Main display */
+.display{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:700px;margin:0 auto;}
+@media(max-width:500px){.display{grid-template-columns:1fr;}}
+
+.panel{background:#12121c;border:1px solid #2a2a3a;border-radius:10px;padding:16px;}
+.panel-title{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#555;
+  margin-bottom:12px;border-bottom:1px solid #1a1a2a;padding-bottom:6px;}
+
+/* Bingo card */
+.col-headers{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin-bottom:4px;}
+.col-h{text-align:center;font-size:10px;font-weight:bold;color:#555;letter-spacing:1px;}
+.bingo-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;}
+.cell{
+  aspect-ratio:1;border-radius:4px;
+  background:linear-gradient(135deg,#f5d878,#d4af37);
+  border:2px solid #8b6914;color:#1a0800;
+  display:flex;align-items:center;justify-content:center;
+  font-size:8px;font-weight:bold;transition:all .2s;
+}
+.cell.active{
+  background:#aa2299;border-color:#ff44cc;color:#fff;
+  box-shadow:0 0 6px #ff44cc66;
+  animation:bwink .5s ease infinite alternate;
+}
+.cell.free{background:linear-gradient(135deg,#2255cc,#0033aa);border-color:#4466ff;color:#6688ff;font-size:8px;}
+.cell.active.free{background:#aa2299;border-color:#ff44cc;color:#fff;}
+@keyframes bwink{from{background:#cc0099}to{background:#ff44cc}}
+
+/* Pattern info */
+.info-row{display:flex;justify-content:space-between;align-items:center;
+  padding:4px 0;border-bottom:1px solid #1a1a2a;font-size:11px;}
+.info-row:last-child{border-bottom:none;}
+.info-label{color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;}
+.info-val{color:#ffd700;font-weight:bold;}
+.info-val.green{color:#44ff88;}
+.info-val.red{color:#ff4444;}
+
+/* Reels */
+.reels{display:flex;gap:8px;justify-content:center;margin-top:8px;}
+.reel-col{
+  background:#0a0a14;border:2px solid #2a2a4a;border-radius:8px;
+  padding:6px;width:70px;display:flex;flex-direction:column;
+  align-items:center;gap:4px;
+}
+.reel-sym{
+  width:54px;height:54px;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:bold;text-align:center;
+  border:2px solid transparent;
+}
+.reel-sym.payline{
+  border-color:#ffd700;
+  box-shadow:0 0 8px #ffd70044;
+}
+.sym-sp    {background:linear-gradient(135deg,#1a2a5a,#0d1a3a);color:#6688dd;border-color:#4466aa!important;}
+.sym-seven {background:linear-gradient(135deg,#5a1a00,#3a0d00);color:#ff6600;}
+.sym-3bar  {background:linear-gradient(135deg,#1a1a1a,#0a0a0a);color:#aaaaaa;}
+.sym-2bar  {background:linear-gradient(135deg,#1a1a1a,#0a0a0a);color:#888888;}
+.sym-1bar  {background:linear-gradient(135deg,#1a1a1a,#0a0a0a);color:#666666;}
+.sym-cherry{background:linear-gradient(135deg,#3a0010,#1a0008);color:#ff2244;}
+.sym-blank {background:#0a0a0a;color:#333;}
+.sym-prog  {background:linear-gradient(135deg,#2a1a00,#1a0d00);color:#ffd700;}
+.reel-label{font-size:8px;color:#444;letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+.payline-line{
+  background:#ffd700;height:2px;width:100%;
+  box-shadow:0 0 6px #ffd700;margin:2px 0;
+  border-radius:1px;
+}
+.reel-key-badge{
+  text-align:center;font-size:9px;color:#6688bb;
+  background:#0a0a1a;border:1px solid #2a2a4a;
+  border-radius:4px;padding:3px 8px;margin-top:8px;
+  letter-spacing:1px;font-family:monospace;
+}
+.no-reel{
+  text-align:center;color:#444;font-size:11px;
+  padding:20px;letter-spacing:1px;
+}
+
+.empty-state{
+  text-align:center;color:#333;font-size:12px;
+  padding:40px 20px;letter-spacing:1px;
+}
+</style>
+</head>
+<body>
+<h1>Pattern vs Reel Stop</h1>
+<div class="sub">Select a pattern to see its bingo card shape and reel stop combination</div>
+
+<div class="selector" id="selector"></div>
+
+<div class="display">
+  <div class="panel">
+    <div class="panel-title">Bingo Card Pattern</div>
+    <div class="col-headers">
+      <div class="col-h">B</div><div class="col-h">I</div>
+      <div class="col-h">N</div><div class="col-h">G</div><div class="col-h">O</div>
+    </div>
+    <div class="bingo-grid" id="bingo-grid"></div>
+    <div style="margin-top:12px;" id="pattern-info"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Reel Stop Combination</div>
+    <div id="reel-display"><div class="empty-state">← Select a pattern</div></div>
+  </div>
+</div>
+
+<script>
+const PATTERNS = [
+  {name:'Corporal Stripes', balls:27, pay:[800,1600,2500], reel:'jp',      cells:[2,6,7,8,10,11,12,13,14,15,19], type:'jackpot'},
+  {name:'Cross Corners',    balls:29, pay:[320,640,960],   reel:'7w4',     cells:[0,4,7,11,12,13,17,20,24],      type:'high'},
+  {name:'Pyramid',          balls:29, pay:[160,320,480],   reel:'7w2',     cells:[12,16,17,18,20,21,22,23,24],   type:'high'},
+  {name:'The Kite',         balls:35, pay:[160,320,480],   reel:'3bw4',    cells:[0,1,2,5,6,7,10,11,12,18,24],  type:'high'},
+  {name:'Double Cross',     balls:28, pay:[80,160,240],    reel:'7',       cells:[2,6,7,8,12,16,17,18,22],       type:'high'},
+  {name:'Arrowhead',        balls:30, pay:[80,160,240],    reel:'3bw2',    cells:[2,6,7,8,10,12,14,17,22],       type:'high'},
+  {name:'G Flat',           balls:36, pay:[40,80,120],     reel:'3b',      cells:[2,3,4,7,12,15,16,17,20,21,22], type:'high'},
+  {name:'Make Cents',       balls:29, pay:[40,80,120],     reel:'spchch',  cells:[2,6,7,8,11,12,16,17,18,22],   type:'high'},
+  {name:'Four Leaf Clover', balls:34, pay:[100,200,300],   reel:'2bw4',    cells:[1,5,6,7,11,12,13,17,18,19,23], type:'high'},
+  {name:'Valentine',        balls:37, pay:[50,100,150],    reel:'2bw2',    cells:[4,6,8,10,12,14,16,18,20,22],  type:'high'},
+  {name:'Tee',              balls:38, pay:[20,40,60],      reel:'1bw2',    cells:[0,1,2,3,4,7,12,17,22],        type:'mid'},
+  {name:'Poodle Dog',       balls:35, pay:[20,40,60],      reel:'spspch',  cells:[0,1,6,11,12,13,14,16,18,21,23], type:'mid'},
+  {name:'Christmas Tree',   balls:38, pay:[25,50,75],      reel:'2b',      cells:[2,6,7,8,10,11,12,13,14,17,22], type:'mid'},
+  {name:'Private Stripes',  balls:30, pay:[12,24,36],      reel:'1b',      cells:[2,6,8,10,12,14],              type:'mid'},
+  {name:'Stepladder',       balls:36, pay:[10,20,30],      reel:'spmb',    cells:[4,7,8,12,15,16,20],           type:'mid'},
+  {name:'Hopscotch',        balls:38, pay:[10,20,30],      reel:'spch',    cells:[1,3,7,11,12,13,17,21,23],     type:'mid'},
+  {name:'Baby Buggy',       balls:35, pay:[10,20,30],      reel:'ch3',     cells:[3,4,8,10,11,12,13,15,16,17,18,21,23], type:'mid'},
+  {name:'Small Diamond',    balls:38, pay:[5,10,15],       reel:'mb',      cells:[7,11,12,13,17],               type:'low'},
+  {name:'EII',              balls:38, pay:[4,8,12],        reel:'ch2',     cells:[0,5,10,15,20,21,22,23,24],    type:'low'},
+  {name:'Open Diamond',     balls:38, pay:[2,4,6],         reel:'ch1',     cells:[2,10,12,14,22],               type:'low'},
+  {name:'Lazy-T',           balls:25, pay:[0,0,0],         reel:'coverall',cells:[4,9,10,11,12,13,14,19,24],   type:'progressive'},
+  {name:'Cover All 40',     balls:40, pay:[0.01,0.01,0.01],reel:null,      cells:Array.from({length:25},(_,i)=>i), type:'coverall'},
+  {name:'Cover All 75',     balls:75, pay:[0,0,0],         reel:null,      cells:Array.from({length:25},(_,i)=>i), type:'coverall'},
+];
+
+const REEL_SYMS = {
+  'jp':[0,0,0],'7':[1,1,1],'3b':[2,2,2],'2b':[3,3,3],
+  '1b':[4,4,4],'ch3':[5,5,5],'mb':[2,3,4],'ch2':[5,5,4],
+  'ch1':[5,4,3],'7w2':[0,1,1],'3bw2':[0,2,2],'2bw2':[0,3,3],
+  '1bw2':[0,4,4],'spmb':[0,2,3],'spch':[0,5,4],'7w4':[0,0,1],
+  '3bw4':[0,0,2],'2bw4':[0,0,3],'1bw4':[0,0,4],'spspch':[0,0,5],
+  'spchch':[0,5,5],'none':[4,2,3],'coverall':[7,7,7]
+};
+
+const SYM_INFO = [
+  {name:'SP (Wild)',    cls:'sym-sp',     icon:'SP\n★'},
+  {name:'7',           cls:'sym-seven',  icon:'7'},
+  {name:'3-Bar',       cls:'sym-3bar',   icon:'≡\n3'},
+  {name:'2-Bar',       cls:'sym-2bar',   icon:'═\n2'},
+  {name:'1-Bar',       cls:'sym-1bar',   icon:'—\n1'},
+  {name:'Cherry',      cls:'sym-cherry', icon:'🍒'},
+  {name:'Blank',       cls:'sym-blank',  icon:''},
+  {name:'Progressive', cls:'sym-prog',   icon:'JP\n★'},
+];
+
+function renderBingoCard(pat) {
+  const grid = document.getElementById('bingo-grid');
+  const cellSet = new Set(pat.cells);
+  grid.innerHTML = '';
+  for (let i = 0; i < 25; i++) {
+    const isFree = i === 12;
+    const isActive = cellSet.has(i) || isFree;
+    const cls = ['cell', isActive ? 'active' : '', isFree ? 'free' : ''].filter(Boolean).join(' ');
+    const d = document.createElement('div');
+    d.className = cls;
+    d.textContent = isFree ? '★' : '';
+    grid.appendChild(d);
+  }
+}
+
+function renderInfo(pat) {
+  const typeColors = {jackpot:'#ff9900',high:'#ffd700',mid:'#88aaff',low:'#aaaaaa',progressive:'#ffd700',coverall:'#00ffcc'};
+  const color = typeColors[pat.type] || '#ffd700';
+  document.getElementById('pattern-info').innerHTML = `
+    <div class="info-row">
+      <span class="info-label">Pattern</span>
+      <span class="info-val" style="color:${color}">${pat.name}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Max Balls</span>
+      <span class="info-val green">≤ ${pat.balls}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Cells</span>
+      <span class="info-val">${pat.cells.length} cells</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Pay (1/2/3)</span>
+      <span class="info-val">$${pat.pay[0]} / $${pat.pay[1]} / $${pat.pay[2]}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Reel Key</span>
+      <span class="info-val" style="color:#6688bb;font-family:monospace">${pat.reel || 'none (no reels)'}</span>
+    </div>
+  `;
+}
+
+function renderReels(pat) {
+  const el = document.getElementById('reel-display');
+  if (!pat.reel) {
+    el.innerHTML = `<div class="no-reel">No reel stop<br><span style="color:#333;font-size:10px">Cover All patterns have no reel association</span></div>`;
+    return;
+  }
+  const syms = REEL_SYMS[pat.reel];
+  if (!syms) {
+    el.innerHTML = `<div class="no-reel" style="color:#ff4444">Reel key "${pat.reel}" not found in REEL_SYMS!</div>`;
+    return;
+  }
+
+  // Build 3 reels showing: above, payline, below symbols
+  // For display, show the payline symbol with neighbors
+  let html = `<div class="reels">`;
+  const labels = ['Reel 1', 'Reel 2', 'Reel 3'];
+  for (let r = 0; r < 3; r++) {
+    const symId = syms[r];
+    const sym = SYM_INFO[symId];
+    html += `
+      <div class="reel-col">
+        <div class="reel-label">${labels[r]}</div>
+        <div class="payline-line"></div>
+        <div class="reel-sym payline ${sym.cls}" style="white-space:pre-line">${sym.icon}</div>
+        <div class="payline-line"></div>
+        <div style="font-size:8px;color:#555;margin-top:4px;text-align:center">${sym.name}</div>
+      </div>`;
+  }
+  html += `</div>`;
+  html += `<div class="reel-key-badge">reel: '${pat.reel}' → [${syms.join(', ')}]</div>`;
+
+  // Symbol legend for this combo
+  const usedSyms = [...new Set(syms)];
+  html += `<div style="margin-top:12px;font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase;border-top:1px solid #1a1a2a;padding-top:8px;">`;
+  html += `<div style="margin-bottom:6px;">Symbol IDs:</div>`;
+  for (const id of usedSyms) {
+    const s = SYM_INFO[id];
+    const count = syms.filter(x=>x===id).length;
+    html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+      <div class="reel-sym ${s.cls}" style="width:28px;height:28px;font-size:7px;white-space:pre-line;flex-shrink:0">${s.icon}</div>
+      <span style="color:#888">ID ${id} = ${s.name} × ${count}</span>
+    </div>`;
+  }
+  html += `</div>`;
+
+  el.innerHTML = html;
+}
+
+// Build selector
+const sel = document.getElementById('selector');
+const sections = [
+  {label:'Jackpot',    types:['jackpot']},
+  {label:'High Pays',  types:['high']},
+  {label:'Mid Pays',   types:['mid']},
+  {label:'Low Pays',   types:['low']},
+  {label:'Progressive',types:['progressive']},
+  {label:'Cover All',  types:['coverall']},
+];
+
+let activeBtn = null;
+for (const s of sections) {
+  const pats = PATTERNS.filter(p=>s.types.includes(p.type));
+  const wrap = document.createElement('div');
+  wrap.style.cssText='display:flex;flex-wrap:wrap;gap:4px;width:100%;justify-content:center;border-top:1px solid #1a1a2a;padding-top:8px;margin-top:4px;';
+  const lbl = document.createElement('div');
+  lbl.style.cssText='width:100%;text-align:center;font-size:9px;color:#333;letter-spacing:2px;text-transform:uppercase;';
+  lbl.textContent=s.label;
+  wrap.appendChild(lbl);
+  for (const p of pats) {
+    const btn = document.createElement('button');
+    btn.className = `pat-btn ${p.type}`;
+    btn.textContent = p.name;
+    btn.onclick = () => {
+      if (activeBtn) activeBtn.classList.remove('active');
+      btn.classList.add('active');
+      activeBtn = btn;
+      renderBingoCard(p);
+      renderInfo(p);
+      renderReels(p);
+    };
+    wrap.appendChild(btn);
+  }
+  sel.appendChild(wrap);
+}
+
+// Auto-select first pattern
+sel.querySelector('.pat-btn').click();
+</script>
+</body>
+</html>
