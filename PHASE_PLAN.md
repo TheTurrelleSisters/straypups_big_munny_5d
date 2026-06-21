@@ -1308,3 +1308,56 @@ otherwise brought in line with $1's structure/script-order/version strings.
 
 **Version:** `6.01` — CACHE, splash-ver, all `?v=` strings consistent.
 
+
+---
+
+## v6.02 — CRITICAL FIX: bet debit/comparison/contribute not denom-multiplied
+
+**Bug introduced in v6.01.** When `js/game.js` was synced verbatim from the $1
+source of truth, several places used bare `S.cpl` (the 1/2/3 credit-level
+index) as if it were already a dollar amount — true at $1 denom (where
+`PROG_DENOM=1` makes `S.cpl` and `S.cpl*PROG_DENOM` numerically identical)
+but WRONG at $5 denom. The result: a credit-level-1 spin only debited $1
+from the balance while still paying out at full $5-denom payouts — a real
+accounting mismatch between bet cost and win value.
+
+**Original pre-v6.01 $5 code had this correct** (`S.bal-=S.cpl*DENOM`) —
+this was lost in the verbatim sync and is now restored, expressed via the
+existing `PROG_DENOM` global instead of a separate `DENOM` variable.
+
+**Fixed:**
+- `doSpin()`: introduced `_betAmt = S.cpl*PROG_DENOM`; used for the
+  insert-cash comparison, the balance debit, `Progressive.contribute()`,
+  and `_spinBalBefore`
+- Two WABC-unavailable refund paths (`S.bal+=S.cpl`) now refund
+  `S.cpl*PROG_DENOM` to match what was actually debited
+- `betval` display now shows `S.cpl*PROG_DENOM` (was showing raw credit
+  count, e.g. "$1.00" instead of "$5.00" at credit level 1)
+- All three `opLog` `bet:` fields in `doSpin` now report `_betAmt` instead
+  of raw `S.cpl`, consistent with the progressive-jackpot opLog path which
+  already did this correctly
+
+**Version:** `6.02` — CACHE bumped to `spbm5d-v602`, all `?v=` strings to
+match.
+
+
+---
+
+## v6.03 — CRITICAL FIX: Red Spin payout not denom-multiplied
+
+**Found during the Maxine sync's careful manual review** (the same bug
+pattern caught a second time, this time in the Red Spin payout calculation
+specifically, which v6.02's fix did not cover): `var payAmt=pat.pay[cpl-1];`
+inside the Red Spin `_onReelDone` callback computed the per-pattern win
+amount without multiplying by `PROG_DENOM`. At $5 denom, every Red Spin
+sub-pattern would have paid out as if denom were $1 — a direct underpayment
+to players on every Red Spin win.
+
+**Fixed:** `payAmt=pat.pay[cpl-1]*(typeof PROG_DENOM!=='undefined'?PROG_DENOM:1)`
+
+This mirrors the same gap in the $1 source of truth's equivalent line,
+which is invisible there only because PROG_DENOM=1.
+
+**Version:** `6.03` — CACHE bumped to `spbm5d-v603`, all `?v=` strings to
+match.
+

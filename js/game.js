@@ -679,7 +679,7 @@ function doBingoSpin(){
     if(!_wabcSeq || _wabcSeq.length !== 75) {
       /* Sequence not ready — DB may be restarting */
       toast('Ball call unavailable \u2014 please wait for connection');
-      S.spinning=false; S.bal+=S.cpl; setCtrl(true); updUI();
+      S.spinning=false; S.bal+=S.cpl*(typeof PROG_DENOM!=='undefined'?PROG_DENOM:1); setCtrl(true); updUI();
       return [];
     }
     BG.callSeq = _wabcSeq;
@@ -691,7 +691,7 @@ function doBingoSpin(){
   } else {
     /* WABC unavailable — cannot proceed without a valid ball sequence */
     toast('Ball call unavailable \u2014 please wait for connection');
-    S.spinning=false; S.bal+=S.cpl; setCtrl(true); updUI();
+    S.spinning=false; S.bal+=S.cpl*(typeof PROG_DENOM!=='undefined'?PROG_DENOM:1); setCtrl(true); updUI();
     return [];
   }
 
@@ -898,7 +898,7 @@ function fmtMoney(n){
 function updUI(){
   document.getElementById('bval').textContent=fmt(S.bal);
   _savePlayerState();
-  document.getElementById('betval').textContent=fmt(S.cpl);
+  document.getElementById('betval').textContent=fmt(S.cpl*(typeof PROG_DENOM!=='undefined'?PROG_DENOM:1));
   document.getElementById('cdisp').textContent=S.cpl;
 }
 /* Refresh the spin watchdog — called at each stage of a long Red
@@ -1215,7 +1215,7 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
       renderBingoCard(BG.card,BG.matchedCells,pat.cells);
       console.log('[RedSpin] All 3 reels done, firing 120ms callback');
       setTimeout(function(){
-      var payAmt=pat.pay[cpl-1];
+      var payAmt=pat.pay[cpl-1]*(typeof PROG_DENOM!=='undefined'?PROG_DENOM:1);
       if(pat.isProgressive&&progCtx){
         /* Progressive Jackpot — grand finale. Reels already show 'coverall'
            symbols (just landed). Add accumulated bonusTotal + jackpot amount,
@@ -1307,15 +1307,16 @@ function doSpin(){
   if(S.spinning) return;
   if(Date.now()-_spinDebounce<300) return;
   if(BG.awaitingNewSeq){toast('New ball sequence loading \u2014 please wait');return;}
-  if(S.bal<S.cpl){toast('INSERT CASH TO PLAY');return;}
+  var _betAmt=S.cpl*(typeof PROG_DENOM!=='undefined'?PROG_DENOM:1);
+  if(S.bal<_betAmt){toast('INSERT CASH TO PLAY');return;}
   if(_reelWinH===0) initReelSlots();
-  S.spinning=true;S.bal-=S.cpl;
+  S.spinning=true;S.bal-=_betAmt;
   if(typeof Progressive!=='undefined'){
     Progressive.registerPlayer(null, window._playerNickname || null);
     if(Progressive.updateLastSpin) Progressive.updateLastSpin();
-    if(Progressive.contribute) Progressive.contribute(S.cpl);
+    if(Progressive.contribute) Progressive.contribute(_betAmt);
   }
-  var _spinBalBefore=S.bal+S.cpl; var _spinCardSerial=BG.cardSerial;
+  var _spinBalBefore=S.bal+_betAmt; var _spinCardSerial=BG.cardSerial;
   setWin(0,'');document.getElementById('bt-box').classList.remove('on');
   updUI();setCtrl(false);
   stopPatternCycle();
@@ -1376,7 +1377,7 @@ function doSpin(){
     animateReels(spinData,function(){
       if(winPatterns.length===0){
         setWin(0,'NO BINGO');
-        opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:0,patterns:[],balBefore:_spinBalBefore,balAfter:S.bal});
+        opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:_betAmt,win:0,patterns:[],balBefore:_spinBalBefore,balAfter:S.bal});
         _spinDebounce=Date.now();_clearSpinWatchdog();S.spinning=false;setCtrl(true);updUI();return;
       }
 
@@ -1451,13 +1452,13 @@ function doSpin(){
             setWin(baseAmt+bonusTotal,'BINGO WIN + RED SPIN!');
             document.getElementById('bt-box').classList.remove('on');
             startPatternCycle(winPatterns);
-            opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt+bonusTotal,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
+            opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:_betAmt,win:baseAmt+bonusTotal,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
             _spinDebounce=Date.now();updUI();_clearSpinWatchdog();S.spinning=false;setCtrl(true);
           });
         },600);return;
       }
       startPatternCycle(winPatterns);
-      opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:S.cpl,win:baseAmt,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
+      opLog({type:'SPIN',gameSerial:genGameSerial(),cardSerial:_spinCardSerial,bet:_betAmt,win:baseAmt,patterns:winPatterns.map(function(p){return p.name;}),balBefore:_spinBalBefore,balAfter:S.bal});
       _spinDebounce=Date.now();_clearSpinWatchdog();S.spinning=false;setCtrl(true);updUI();
     });
   } // end _continueSpinAfterClaim
