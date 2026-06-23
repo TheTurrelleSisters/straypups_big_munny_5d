@@ -1437,3 +1437,28 @@ commands armed while the player is mid-session.
 |------|--------|
 | `service-worker.js` | `CACHE = 'spbm5d-v610'` |
 | `index.html` | title, splash-ver, all `?v=` → `6.10` |
+
+---
+
+## v6.07 — coverall → lazyt + none stop fix + Lazy-T comment fix
+- `js/paytable.js`: `'coverall'` → `'lazyt'`; `REEL_SYMS['none']` `[4,2,3]` → `[6,4,6]`; Lazy-T comment corrected
+- `js/game.js`: `REEL_SYMS['coverall']` → `REEL_SYMS['lazyt']`; comment updated
+- Cache: `spbm5d-v607`
+
+## v6.08 — Trigger 2: server-side threshold + guaranteed Lazy-T card
+- `js/progressive.js`: Added `isForceArmed()`
+- `js/game.js`: Added `_genGuaranteedLazyTCard()` + Trigger 2 check
+- Cache: `spbm5d-v608`
+
+## v6.09 — CRITICAL FIX: _checkArmedCommand on connect
+- `js/progressive.js`: Added `_checkArmedCommand()` polling on connect and every 30s
+- Cache: `spbm5d-v609`
+
+## v6.10 — Race condition fix: tryAtomicClaim + _continueDoBingoSpin
+- `js/progressive.js`: Added `tryAtomicClaim(onResult)`
+- `js/game.js`: Added `_continueDoBingoSpin(prevBallPos)`, async Trigger 2 path
+- Cache: `spbm5d-v610`
+
+## v6.11 — CRITICAL FIX: service-worker non-fatal pre-cache
+- `service-worker.js`: `.catch()` added to `c.addAll(FILES)` — 404s no longer block SW install
+- Cache: `spbm5d-v611`

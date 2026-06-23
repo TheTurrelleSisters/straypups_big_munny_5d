@@ -1,4 +1,4 @@
-var CACHE = 'spbm5d-v610';
+var CACHE = 'spbm5d-v611';
 var FILES = [
   './',
   './index.html',
@@ -13,8 +13,9 @@ var FILES = [
   './broadcast-init.js',
   './assets/splash.jpg',
   './assets/banner.jpg',
-  './assets/symbols/progressive_jackpot.png',
   './assets/scott_full.png',
+  
+  './assets/symbols/progressive_jackpot.png',
   './assets/icons/icon-192x192.png',
   './assets/icons/icon-512x512.png',
   './assets/credits_addup.wav',
@@ -24,24 +25,28 @@ var FILES = [
 ];
 self.addEventListener('install', function(e){
   e.waitUntil(
-    caches.open(CACHE).then(function(c){ return c.addAll(FILES); })
+    caches.open(CACHE).then(function(c){
+      /* Non-fatal pre-cache: a missing asset (404 on GitHub Pages) must not
+         block SW install and leave the game unloadable. */
+      return c.addAll(FILES).catch(function(err){
+        console.warn('[SW] Pre-cache failed (non-fatal):', err);
+      });
+    }).then(function(){ self.skipWaiting(); })
   );
-  self.skipWaiting();
 });
 self.addEventListener('activate', function(e){
   e.waitUntil(
     caches.keys().then(function(keys){
       return Promise.all(keys.filter(function(k){ return k!==CACHE; }).map(function(k){ return caches.delete(k); }));
-    })
+    }).then(function(){ self.clients.claim(); })
   );
-  self.clients.claim();
 });
 self.addEventListener('fetch', function(e) {
   if (e.request.method !== 'GET') return;
   var url = e.request.url;
   if (url.indexOf('supabase.co') !== -1) return;
-  if (url.indexOf('.js')          !== -1 ||
-      url.indexOf('.html')        !== -1) {
+  if (url.indexOf('.js')   !== -1 ||
+      url.indexOf('.html') !== -1) {
     e.respondWith(
       fetch(e.request)
         .then(function(resp) {
