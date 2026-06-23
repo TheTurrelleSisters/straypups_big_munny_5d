@@ -1462,3 +1462,9 @@ commands armed while the player is mid-session.
 ## v6.11 — CRITICAL FIX: service-worker non-fatal pre-cache
 - `service-worker.js`: `.catch()` added to `c.addAll(FILES)` — 404s no longer block SW install
 - Cache: `spbm5d-v611`
+
+---
+
+## 6.12 — CRITICAL FIX: winPatterns undefined crash on spin
+- `js/game.js`: `doBingoSpin()` return value renamed to `_spinResult`. Added null guard (WABC bail-out) and undefined guard (async Trigger 2 path). `_continueDoBingoSpin()` now calls `_continueSpinAfterClaim()` directly via typeof check. Removed duplicate `_continueSpinAfterClaim` invocation that caused double-spin on Trigger 2 path.
+- Cache: `spbm5d-v612`

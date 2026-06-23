@@ -867,6 +867,8 @@ function _continueDoBingoSpin(prevBallPos) {
       BG._coverAll1to40=true;break;
     }
   }
+  /* Trigger spin continuation — _continueSpinAfterClaim is defined inside doSpin() */
+  if (typeof _continueSpinAfterClaim === 'function') _continueSpinAfterClaim();
   return BG.winPatterns;
 }
 
@@ -1449,10 +1451,13 @@ function doSpin(){
   }
   GS.hasSpun=true;GS.state='active';
 
-  var winPatterns=doBingoSpin();
+  var _spinResult=doBingoSpin();
+  if(_spinResult===null) return; /* WABC bail-out — bet refunded inside doBingoSpin */
+  if(_spinResult===undefined) return; /* async Trigger 2 — _continueDoBingoSpin calls _continueSpinAfterClaim */
 
   // ── SPIN CONTINUATION ───────────────────────────────────────────────────
-  // ALL spin logic lives in _continueSpinAfterClaim().
+  // _continueDoBingoSpin() sets BG.winPatterns then calls _continueSpinAfterClaim.
+  // Both sync and async (Trigger 2) paths go through _continueDoBingoSpin.
   function _continueSpinAfterClaim(){
     /* Mark entertainment phase as active. Server (wabc-ball-ticker) drives
        actual ball positions via WABC.onChange → _onServerBallPos. */
