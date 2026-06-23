@@ -919,6 +919,57 @@ var Progressive = (function () {
       .catch(function() {});
   }
 
+
+  /* tryAtomicClaim(onResult)
+   * Attempts to atomically pre-claim an armed force_jackpot command before
+   * the guaranteed Lazy-T card is generated. Only ONE client can succeed —
+   * all others get onResult(false) and receive a normal card instead.
+   *
+   * Uses a two-step approach:
+   *   1. UPDATE ... SET status='claimed_pending' WHERE status='armed' AND id=X
+   *   2. If UPDATE affected 1 row → this client owns it → onResult(true)
+   *      If UPDATE affected 0 rows → another client claimed it → onResult(false)
+   *
+   * The final status='won' update happens inside _claimForceWin() as normal.
+   * _forceCommandId must already be set by _checkArmedCommand() or realtime.
+   * ES5-safe. */
+  function tryAtomicClaim(onResult) {
+    if (!_forceArmed || !_forceCommandId || _forceClaimed) {
+      onResult(false);
+      return;
+    }
+    if (!_connected || !_client) {
+      onResult(false);
+      return;
+    }
+    var cmdId = _forceCommandId;
+    _client.from('progressive_commands')
+      .update({ status: 'claimed_pending' })
+      .eq('id', cmdId)
+      .eq('status', 'armed')
+      .select()
+      .then(function(res) {
+        if (res.error || !res.data || !res.data.length) {
+          /* Another client claimed it first — stand down */
+          console.log('[Progressive] tryAtomicClaim: lost race — normal card');
+          _forceArmed     = false;
+          _forceCommandId = null;
+          onResult(false);
+          return;
+        }
+        /* We own it — restore to armed so _claimForceWin can update to won */
+        _client.from('progressive_commands')
+          .update({ status: 'armed' })
+          .eq('id', cmdId)
+          .then(function() {
+            console.log('[Progressive] tryAtomicClaim: claimed — guaranteed Lazy-T card');
+            onResult(true);
+          })
+          .catch(function() { onResult(true); }); /* proceed even if restore fails */
+      })
+      .catch(function() { onResult(false); });
+  }
+
   function mustHit()            { return _localMode ? (_localPotValue >= _localPotCeiling) : (_localValue >= _ceiling); }
   function isForceArmed()       { return _forceArmed && !!_forceCommandId && !_forceClaimed; }
   function getDisplay()         { var v = _localMode ? _localPotValue : _localValue; return '$' + v.toFixed(2); }
@@ -943,6 +994,7 @@ var Progressive = (function () {
     registerPlayer:     registerPlayer,
     mustHit:            mustHit,
     isForceArmed:       isForceArmed,
+    tryAtomicClaim:     tryAtomicClaim,
     getDisplay:         getDisplay,
     getValue:           getValue,
     isConnected:        isConnected,

@@ -787,22 +787,37 @@ function doBingoSpin(){
   BG.card=genBingoCard();
 
   // ── TRIGGER 2: Guaranteed Lazy-T card when force_jackpot is armed ──────────
-  // When the server threshold arms a force_jackpot command, generate a bingo
-  // card guaranteed to hit Lazy-T within the first 24 called balls.
-  // The WABC server sequence is already in BG.callSeq — we pick cell values
-  // from that sequence for the 8 non-free Lazy-T cells, then fill remaining
-  // cells normally. Card is still a valid bingo card with correct column ranges.
-  // Falls back to normal genBingoCard() if sequence doesn't have enough matching
-  // balls in first 24 (extremely unlikely but handled gracefully).
+  // Design: DB is the sole authority. On every spin where _forceArmed is true,
+  // we attempt an ATOMIC claim of the armed command BEFORE generating the card.
+  // Only the client that successfully claims the row gets the guaranteed card.
+  // All other clients (who also have _forceArmed=true from _checkArmedCommand)
+  // fail the atomic claim and receive a normal card instead — preventing the
+  // race condition where multiple clients simultaneously generate Lazy-T cards.
+  //
+  // Claim is atomic: UPDATE progressive_commands SET status='claimed_pending'
+  // WHERE id=X AND status='armed' — only one client can succeed.
+  // The actual 'won' update happens inside _claimForceWin() after the spin.
+  //
+  // _pendingGuaranteedClaim is set here if claim succeeds, read by armAndClaim().
+  // ─────────────────────────────────────────────────────────────────────────────
   if(typeof Progressive !== 'undefined' && Progressive.isForceArmed &&
      Progressive.isForceArmed() && BG.callSeq && BG.callSeq.length === 75) {
-    var _lazyTCard = _genGuaranteedLazyTCard(BG.callSeq);
-    if(_lazyTCard) {
-      BG.card = _lazyTCard;
-    }
-    // If null returned, BG.card already set by genBingoCard() above — no change
+    /* Attempt atomic pre-claim — synchronous flag set by async response */
+    Progressive.tryAtomicClaim(function(claimed) {
+      if(claimed) {
+        var _lazyTCard = _genGuaranteedLazyTCard(BG.callSeq);
+        if(_lazyTCard) BG.card = _lazyTCard;
+      }
+      /* Continue spin with whatever card is set — normal flow resumes */
+      _continueDoBingoSpin(prevBallPos);
+    });
+    return; /* async path — _continueDoBingoSpin called in callback above */
   }
   // ── END TRIGGER 2 guaranteed card ──────────────────────────────────────────
+  _continueDoBingoSpin(prevBallPos);
+}
+
+function _continueDoBingoSpin(prevBallPos) {
   BG.cardNumSet={};
   for(var i=0;i<25;i++){if(BG.card[i]!==null) BG.cardNumSet[BG.card[i]]=i;}
 
