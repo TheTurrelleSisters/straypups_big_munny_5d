@@ -1361,3 +1361,19 @@ which is invisible there only because PROG_DENOM=1.
 **Version:** `6.03` — CACHE bumped to `spbm5d-v603`, all `?v=` strings to
 match.
 
+
+---
+
+## v6.07 — Messaging system migration + broadcast_messages removal + none stop fix
+
+### Changes
+- `js/paytable.js`: `REEL_SYMS['coverall']` renamed to `'lazyt'`; Lazy-T pattern `reel:'coverall'` → `reel:'lazyt'`; comment corrected to "25 balls drawn (24 called + free space)"; `REEL_SYMS['none']` fixed from `[4,2,3]` to `[6,4,6]` (blank guards — v6.1 fix from $1 game ported)
+- `js/game.js`: `REEL_SYMS['coverall']` → `REEL_SYMS['lazyt']`; Red Spin comment updated
+- `js/progressive.js`: Removed `broadcast_messages` subscription system. Added operator inbox system: `_subscribeOpMessages()`, `_loadOpMessages()`, `onOpMessage()` reading from `public.messages`
+- `index.html`: Added `op-msg-subject` element; `showNextMessage()` renders subject + icon + body; `Progressive.onMessage` wire replaced by `Progressive.onOpMessage`; all `?v=` → `6.07`
+
+### Version bump
+| File | Change |
+|------|--------|
+| `service-worker.js` | `CACHE = 'spbm5d-v607'` |
+| `index.html` | title, splash-ver, all `?v=` → `6.07` |

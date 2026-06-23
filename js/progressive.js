@@ -640,8 +640,8 @@ var Progressive = (function () {
           _subscribeHits();
           _subscribePresence();
           /* _subscribeBallCall removed v5.39 — WABC Broadcast handles ball position */
-          _subscribeMessages();
-          _checkUnreadMessages();
+          _subscribeOpMessages();
+          _loadOpMessages();
           setInterval(function () { _fetchRow(null); }, 60000);
           _startConnMonitor();
           if (onReady) onReady();
@@ -744,56 +744,54 @@ var Progressive = (function () {
   /* ═══════════════════════════════════════════════════════════════
      BROADCAST MESSAGES (unchanged from v1.3)
      ═══════════════════════════════════════════════════════════════ */
-  var _messageListeners  = [];
   var _onForceNotifyListeners = [];
-  var _lastSeenMessageId = 0;
-  var _SEEN_KEY          = 'prog_last_msg_' + PROG_GAME_ID;
 
-  function _loadLastSeen() {
-    try { var v = localStorage.getItem(_SEEN_KEY); if (v) _lastSeenMessageId = parseInt(v, 10) || 0; } catch(e) {}
+  /* ── OPERATOR INBOX MESSAGES (public.messages) ──────────────────────────
+     Separate from broadcast_messages (system/engine events only).
+     Operator inbox messages: type + subject + body, dismissed_by per player.
+     Delivers to game banner toast via onOpMessage() callback.
+     Dismiss is handled by the game index.html — calls dismiss_message RPC. */
+  var _opMessageListeners = [];
+  var _opLastSeenId       = 0;
+  var _OP_SEEN_KEY        = 'prog_op_msg_' + PROG_GAME_ID;
+
+  function _loadOpLastSeen() {
+    try { var v = localStorage.getItem(_OP_SEEN_KEY); if (v) _opLastSeenId = parseInt(v, 10) || 0; } catch(e) {}
   }
-  function _saveLastSeen(id) {
-    _lastSeenMessageId = id;
-    try { localStorage.setItem(_SEEN_KEY, String(id)); } catch(e) {}
+  function _saveOpLastSeen(id) {
+    _opLastSeenId = id;
+    try { localStorage.setItem(_OP_SEEN_KEY, String(id)); } catch(e) {}
   }
-  function _notifyMessage(msg) {
-    for (var i = 0; i < _messageListeners.length; i++) {
-      try { _messageListeners[i](msg); } catch(e) {}
+  function _notifyOpMessage(msg) {
+    for (var i = 0; i < _opMessageListeners.length; i++) {
+      try { _opMessageListeners[i](msg); } catch(e) {}
     }
-    _saveLastSeen(msg.id);
+    _saveOpLastSeen(msg.id);
   }
-  function _subscribeMessages() {
-    _client.channel('broadcast-messages')
+  function _subscribeOpMessages() {
+    _client.channel('op-inbox-' + _sessionKey)
       .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'broadcast_messages'
-      }, function(p) { if (p.new) _notifyMessage(p.new); })
+        event: 'INSERT', schema: 'public', table: 'messages'
+      }, function(p) { if (p.new) _notifyOpMessage(p.new); })
       .subscribe();
   }
-  function _checkUnreadMessages() {
-    _loadLastSeen();
-    /* Only replay messages from the last 30 minutes — prevents players
-       who were offline for hours/days from receiving a backlog of stale
-       Cover All or system notifications that are no longer relevant.
-       Cover All events no longer insert into broadcast_messages (v6.0),
-       but this age guard protects against any historical rows and future
-       message types that should not replay on login. */
+  function _loadOpMessages() {
+    _loadOpLastSeen();
     var _cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    _client.from('broadcast_messages').select('*')
-      .gt('id', _lastSeenMessageId)
+    _client.from('messages').select('*')
+      .gt('id', _opLastSeenId)
       .gt('created_at', _cutoff)
-      .not('type', 'in', '("force_local_ball","restore_wide_ball")')
       .order('id', { ascending: true })
       .then(function(res) {
         if (res.error || !res.data || !res.data.length) return;
-        /* Cap replay at 3 messages max — never flood a newly-connecting
-           player with a long queue of banners regardless of how many
-           legitimate messages accumulated while they were away. */
         var _msgs = res.data.slice(0, 3);
         _msgs.forEach(function(msg, i) {
-          setTimeout(function() { _notifyMessage(msg); }, i * 4000);
+          setTimeout(function() { _notifyOpMessage(msg); }, i * 4000);
         });
-      });
+      }).catch(function() {}); /* non-fatal if table not yet migrated */
   }
+
+
 
   /*
    * armAndClaim(onResult)
@@ -906,7 +904,7 @@ var Progressive = (function () {
   function getPlayerLabel()     { return _playerLabel; }
   function onChange(fn)         { _valueListeners.push(fn); fn(_localValue); }
   function onPresenceChange(fn) { _presenceListeners.push(fn); fn(_presenceCount); }
-  function onMessage(fn)        { _messageListeners.push(fn); }
+  function onOpMessage(fn)      { _opMessageListeners.push(fn); }
   function onForceNotify(fn)    { if (typeof fn==='function') _onForceNotifyListeners.push(fn); }
   return {
     init:               init,
@@ -929,7 +927,7 @@ var Progressive = (function () {
     getPlayerLabel:     getPlayerLabel,
     onChange:           onChange,
     onPresenceChange:   onPresenceChange,
-    onMessage:          onMessage,
+    onOpMessage:        onOpMessage,
     onForceNotify:      onForceNotify,
     onConnChange:       function(fn) { _connChangeListeners.push(fn); }
   };
