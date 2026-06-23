@@ -642,7 +642,9 @@ var Progressive = (function () {
           /* _subscribeBallCall removed v5.39 — WABC Broadcast handles ball position */
           _subscribeOpMessages();
           _loadOpMessages();
+          _checkArmedCommand(); /* Trigger 2: pick up any armed command missed before connect */
           setInterval(function () { _fetchRow(null); }, 60000);
+          setInterval(function () { _checkArmedCommand(); }, 30000); /* re-check every 30s */
           _startConnMonitor();
           if (onReady) onReady();
         });
@@ -892,6 +894,31 @@ var Progressive = (function () {
   }
 
   /* ── Accessors ── */
+
+  /* _checkArmedCommand — polls progressive_commands on connect for any
+     existing armed force_jackpot rows that were inserted before this
+     client connected (and therefore missed the realtime INSERT event).
+     Sets _forceArmed/_forceCommandId so Trigger 2 fires on next spin. */
+  function _checkArmedCommand() {
+    if (!_client || !_connected) return;
+    _client.from('progressive_commands')
+      .select('*')
+      .eq('command', 'force_jackpot')
+      .eq('status', 'armed')
+      .order('id', { ascending: false })
+      .limit(1)
+      .then(function(res) {
+        if (res.error || !res.data || !res.data.length) return;
+        var row = res.data[0];
+        if (_forceArmed && _forceCommandId === row.id) return; /* already set */
+        console.log('[Progressive] Armed command found on connect — id=' + row.id);
+        _forceArmed     = true;
+        _forceCommandId = row.id;
+        _forceClaimed   = false;
+      })
+      .catch(function() {});
+  }
+
   function mustHit()            { return _localMode ? (_localPotValue >= _localPotCeiling) : (_localValue >= _ceiling); }
   function isForceArmed()       { return _forceArmed && !!_forceCommandId && !_forceClaimed; }
   function getDisplay()         { var v = _localMode ? _localPotValue : _localValue; return '$' + v.toFixed(2); }
