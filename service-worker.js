@@ -1,4 +1,4 @@
-var CACHE = 'spbm5d-v603';
+var CACHE = 'spbm5d-v604';
 var FILES = [
   './',
   './index.html',

@@ -58,11 +58,6 @@ var Progressive = (function () {
   var _connChangeListeners = [];   /* fired when online/offline state changes */
   var _connMonitorTimer  = null;
 
-  /* ── Ball call state ── */
-  var _serverBallCall    = null;  /* array of 75 numbers from DB, or null */
-  var _usingServerBalls  = false; /* true when currently using server sequence */
-  var _ballCallListeners = [];    /* callbacks when new sequence arrives */
-
   /* ── Progressive jackpot claim state ── */
   /* _forceArmed/_forceCommandId/_forceClaimed used by armAndClaim() + _claimForceWin()
      as a race guard between simultaneous natural Lazy-T hits from multiple players.
@@ -120,11 +115,6 @@ var Progressive = (function () {
   function _notifyPresence() {
     for (var i = 0; i < _presenceListeners.length; i++) {
       try { _presenceListeners[i](_presenceCount); } catch (e) {}
-    }
-  }
-  function _notifyBallCall(seq) {
-    for (var i = 0; i < _ballCallListeners.length; i++) {
-      try { _ballCallListeners[i](seq); } catch (e) {}
     }
   }
   function _notifyConnChange(isOnline) {
@@ -413,21 +403,6 @@ var Progressive = (function () {
       window.addEventListener('online',  function() { setTimeout(function() { if (_localMode) _goOnlineMode(); }, 1000); });
       window.addEventListener('beforeunload', function() { _stopHeartbeat(); });
     }
-  }
-
-  /* ═══════════════════════════════════════════════════════════════
-     BALL POSITION TRACKING
-     ═══════════════════════════════════════════════════════════════ */
-
-  /*
-   * updateBallPos(pos) — STUBBED in v5.39.
-   * Ball position advances are now sent over WABC Broadcast (wabc.js).
-   * DB tick-writes removed to prevent CDC replication pool saturation.
-   * Checkpoint writes (new sequence, reset) are handled by the WABC operator.
-   */
-  function updateBallPos(pos) {
-    /* no-op — ball position is per-player local only.
-       Never written to DB or broadcast. CDC replication protection. */
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -929,14 +904,10 @@ var Progressive = (function () {
   function getSessionKey()      { return _sessionKey; }
   function getPlayerNum()       { return _playerNum; }
   function getPlayerLabel()     { return _playerLabel; }
-  function isUsingServerBalls() { return _usingServerBalls; }
-
   function onChange(fn)         { _valueListeners.push(fn); fn(_localValue); }
   function onPresenceChange(fn) { _presenceListeners.push(fn); fn(_presenceCount); }
   function onMessage(fn)        { _messageListeners.push(fn); }
   function onForceNotify(fn)    { if (typeof fn==='function') _onForceNotifyListeners.push(fn); }
-  function onBallCallUpdate(fn) { _ballCallListeners.push(fn); }
-
   return {
     init:               init,
     contribute:         contribute,
@@ -954,15 +925,12 @@ var Progressive = (function () {
     getPlayerNickname:  function() { return _playerNickname; },
     isLocalMode:        isLocalMode,
     _getClient:         function() { return _client; },
-    updateBallPos:      updateBallPos,
     getPlayerNum:       getPlayerNum,
     getPlayerLabel:     getPlayerLabel,
-    isUsingServerBalls: isUsingServerBalls,
     onChange:           onChange,
     onPresenceChange:   onPresenceChange,
     onMessage:          onMessage,
     onForceNotify:      onForceNotify,
-    onBallCallUpdate:   onBallCallUpdate,
     onConnChange:       function(fn) { _connChangeListeners.push(fn); }
   };
 }());

@@ -188,7 +188,7 @@ var BG={
   card:[],cardSerial:'',callSeq:[],cardNumSet:{},matchedCells:{},
   winPatterns:[],ballPos:0,entTimer:null,patternCycle:null,cycleIdx:0,
   _coverAll1to40:false,usingServerBalls:false,seqExhausted:false,
-  awaitingNewSeq:false,_coverAll75Fired:false
+  awaitingNewSeq:false,_coverAll75Fired:false,_pendingSeqRefresh:false
 };
 var COL_RANGES=[[1,15],[16,30],[31,45],[46,60],[61,75]];
 
@@ -515,8 +515,13 @@ function stopActiveCaller(){
 /* _onServerBallPos — called by WABC.onChange when server broadcasts a new
    ball position. Server only drives balls 41-75 (entertainment phase).
    BG.ballPos starts at 40 after every spin/sequence reset.
-   Server sends pos=41, 42... 74 then issues a new sequence back at 40. */
+   Server sends pos=41, 42... 74 then issues a new sequence back at 40.
+   v6.2: idle gate — if player has not yet spun (GS.state !== 'active'),
+   WABC continues tracking position internally but we do not daub, render,
+   or check Cover All. On Spin press doBingoSpin() re-syncs BG.ballPos
+   from WABC.getBallPos() so the strip instantly shows the live position. */
 function _onServerBallPos(newPos){
+  if(GS.state !== 'active') return;  /* idle: track in WABC only, no award */
   if(!BG.card||!BG.callSeq||BG.callSeq.length!==75) return;
   if(newPos<=40||newPos>75) return;  /* server only sends 41-75 now */
   if(newPos<=BG.ballPos) return;     /* ignore stale or duplicate pos */
@@ -668,6 +673,7 @@ function _requestNewWABCSequence() {
 
 function doBingoSpin(){
   stopPatternCycle();
+  BG._pendingSeqRefresh = false; /* v6.2: clear any deferred sequence refresh from mid-Red-Spin */
 
   // Preserve how many balls have been revealed so far.
   var prevBallPos=BG.ballPos||0;
@@ -1632,35 +1638,11 @@ function initProgressiveMeter(){
   }
   _setSplashConnStatus('Connecting to wide area…', '#ffaa00');
   Progressive.onChange(updateProgMeter);
-  Progressive.onBallCallUpdate(function(newSeq) {
-    /* onBallCallUpdate fires ONLY when issued_at changes (new sequence issued).
-       progressive.js now filters out ball_pos-only updates.
-       This means: Cover All fired, ball 75 exhausted, or operator issued NEW CALL.
-       Reset ballPos and re-dub current card against the new sequence. */
-    BG.callSeq = newSeq;
-    BG.usingServerBalls = true;
-    BG.seqExhausted = false;
-    BG.awaitingNewSeq = false;
-    BG._coverAll75Fired = false;
-    BG.ballPos = 40; /* server starts entertainment phase at 40 */
-    updateBallCallBadge();
-    /* Only re-render card and strip during active play.
-       During idle (pre-spin), strip stays empty — player hasn't spun yet. */
-    if(GS.state==='active' && BG.card && Object.keys(BG.cardNumSet).length > 0) {
-      BG.matchedCells = {12: true};
-      for (var _rb = 0; _rb < 40; _rb++) {
-        var _rball = BG.callSeq[_rb];
-        if (BG.cardNumSet[_rball] !== undefined)
-          BG.matchedCells[BG.cardNumSet[_rball]] = true;
-      }
-      /* Do not re-render card during spin/Red Spin — pattern highlights
-         set by runRS must remain locked until player presses Spin again. */
-      if(!S.spinning) renderBingoCard(BG.card, BG.matchedCells, null);
-      renderBallStrip(BG.callSeq, 40, BG.cardNumSet);
-    } else if(GS.state!=='active') {
-      clearBallStrip();
-    }
-  });
+  /* v6.2: Progressive.onBallCallUpdate removed — Progressive has no association
+     with WABC. Progressive owns the jackpot pot only. WABC owns the ball
+     sequence entirely. Ball sequence updates are handled exclusively by
+     WABC.onNewCall above. The onBallCallUpdate callback in progressive.js
+     was a dead stub (_notifyBallCall was defined but never called). */
   Progressive.onConnChange(function(isOnline) {
     var banner = document.getElementById('prog-offline-banner');
     var lbl    = document.getElementById('prog-meter-lbl');
@@ -1728,6 +1710,12 @@ function initProgressiveMeter(){
         /* ── WABC event hooks ── registered once here, never re-registered */
 
         /* Operator issued Reset — new sequence, all players fast-forward to 40 */
+        /* Operator issued Reset or Cover All — new sequence, all players fast-forward to 40.
+           v6.2: Red Spin guard — if S.spinning is true (Red Spin in progress), absorb the
+           new sequence and reset flags but do NOT touch BG.matchedCells or render anything.
+           Set BG._pendingSeqRefresh so doBingoSpin() knows to re-sync on the next Spin press.
+           This prevents a mid-Red-Spin sequence change from wiping the card the player is
+           actively viewing. Win highlights remain visible until the next Spin press (Q3). */
         WABC.onNewCall(function(newSeq) {
           if(!newSeq||newSeq.length!==75) return;
           BG.callSeq = newSeq;
@@ -1736,20 +1724,25 @@ function initProgressiveMeter(){
           BG.seqExhausted = false;
           BG.awaitingNewSeq = false;
           BG._coverAll75Fired = false;
-          if(BG.card && Object.keys(BG.cardNumSet).length > 0) {
+          updateBallCallBadge();
+          if(S.spinning) {
+            /* Red Spin in progress — silently absorb, defer all rendering */
+            BG._pendingSeqRefresh = true;
+            return;
+          }
+          BG._pendingSeqRefresh = false;
+          if(GS.state==='active' && BG.card && Object.keys(BG.cardNumSet).length > 0) {
             BG.matchedCells = {12:true};
             for(var _nc=0;_nc<40;_nc++){
               var _ncball=BG.callSeq[_nc];
               if(BG.cardNumSet[_ncball]!==undefined)
                 BG.matchedCells[BG.cardNumSet[_ncball]]=true;
             }
-            /* Do not re-render card during spin/Red Spin — pattern highlights locked. */
-            if(GS.state==='active'&&!S.spinning){
-              renderBingoCard(BG.card,BG.matchedCells,null);
-            }
+            renderBingoCard(BG.card,BG.matchedCells,null);
             renderBallStrip(BG.callSeq,40,BG.cardNumSet);
+          } else if(GS.state!=='active') {
+            clearBallStrip();
           }
-          updateBallCallBadge();
         });
 
         /* Operator restored wide area — re-sync all players to WABC sequence */
