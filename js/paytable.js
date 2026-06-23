@@ -110,10 +110,14 @@ var REEL_SYMS = {
   'ch1'     : [5,4,3],   /* CHR + 1B  + 2B → Open Diamond */
 
   /* ── Progressive Jackpot ── */
-  'coverall': [7,7,7],   /* JP + JP + JP → Lazy-T Progressive Jackpot */
+  'lazyt'   : [7,7,7],   /* JP + JP + JP → Lazy-T Progressive Jackpot */
 
   /* ── No-win ── */
-  'none'    : [4,2,3]    /* 1B + 3B + 2B → non-paying stop */
+  /* v6.1 FIX: was [4,2,3] (three bars) — evalSpin mixed-bar check flagged that
+     as win-looking, so Cover All 40 (reel:null → _reelPats=[] → 'none') showed
+     3 bars on the payline for a $0.01 event. [6,4,6] (BLK/1Bar/BLK) has a blank
+     on the payline so evalSpin returns {amt:0} — correctly non-win-looking. */
+  'none'    : [6,4,6]    /* BLK + 1B + BLK → non-win stop (blank guards) */
 };
 
 /* ── 5. WIN HIERARCHY RULES ─────────────────────────────────────────────────
@@ -251,11 +255,12 @@ var BINGO_PATTERNS = [
 
   /* ── PROGRESSIVE JACKPOT ─────────────────────────────────────────────── */
   /* Lazy-T = O column (4,9,14,19,24) + middle row (10,11,13,14) + free(12)
-     = 9 cells. Must complete within 24 called balls (cell 12 = free space,
-     always daubed, so only 8 non-free cells needed).
+     = 9 cells. Must complete within first 25 balls drawn (24 called + free
+     space). Cell 12 = free space, always daubed, so only 8 non-free cells
+     needed from the ball call.
      Reel: 3× Progressive JP symbol. Awards wide area progressive pot.
      NOT a Cover All — only 9 specific cells required, not all 25. */
-  {name:'Lazy-T', balls:25, pay:[0,0,0], reel:'coverall',
+  {name:'Lazy-T', balls:25, pay:[0,0,0], reel:'lazyt',
    cells:[4,9,10,11,12,13,14,19,24], isProgressive:true},
 
   /* ── COVER ALL ───────────────────────────────────────────────────────── */

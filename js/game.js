@@ -1223,8 +1223,8 @@ function runRS(rsPatterns,cpl,onDone,progCtx){
       setTimeout(function(){
       var payAmt=pat.pay[cpl-1]*(typeof PROG_DENOM!=='undefined'?PROG_DENOM:1);
       if(pat.isProgressive&&progCtx){
-        /* Progressive Jackpot — grand finale. Reels already show 'coverall'
-           symbols (just landed). Add accumulated bonusTotal + jackpot amount,
+        /* Progressive Jackpot — grand finale. Reels already show 3× JP
+           (Lazy-T reel stop). Add accumulated bonusTotal + jackpot amount,
            then hand off to showProgJP. This ends the sequence — no further
            playNext/onDone call. */
         frame2.classList.remove('bonus-active');
@@ -1377,7 +1377,7 @@ function doSpin(){
       /* Progressive: main reels show 3x JP symbol.
          Non-progressive: lowest reel-bearing pattern drives main reels.
          Cover All alone (no reel patterns): non-winning combo on reels. */
-      spinData=forcedSpinResult(_progInWins?REEL_SYMS['coverall']:(_reelPats.length>0?(REEL_SYMS[_reelPats[0].reel]||REEL_SYMS['none']):REEL_SYMS['none']));
+      spinData=forcedSpinResult(_progInWins?REEL_SYMS['lazyt']:(_reelPats.length>0?(REEL_SYMS[_reelPats[0].reel]||REEL_SYMS['none']):REEL_SYMS['none']));
     }
 
     animateReels(spinData,function(){
