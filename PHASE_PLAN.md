@@ -1377,3 +1377,26 @@ match.
 |------|--------|
 | `service-worker.js` | `CACHE = 'spbm5d-v607'` |
 | `index.html` | title, splash-ver, all `?v=` → `6.07` |
+
+---
+
+## 6.08 — Trigger 2: Server-side progressive threshold + guaranteed Lazy-T card
+
+### Changes
+- `js/progressive.js`: Added `isForceArmed()` accessor exposing internal `_forceArmed && !!_forceCommandId && !_forceClaimed` state to game.js
+- `js/game.js`: Added `_genGuaranteedLazyTCard(callSeq)` function — generates a valid bingo card guaranteed to hit Lazy-T within first 24 called balls by assigning Lazy-T cell values from balls already in the server WABC sequence. Falls back to normal `genBingoCard()` if insufficient matching balls. Added Trigger 2 check at top of `doBingoSpin()` after `genBingoCard()` — if `Progressive.isForceArmed()` true, replaces card with guaranteed card. Card serial prefixed `CARD-T2-` for audit trail.
+
+### DB changes (trigger2_migration.sql — run separately)
+- `progressive.must_hit_by` column added — random threshold between seed and ceiling
+- `progressive_random_threshold()` helper RPC
+- `fn_progressive_threshold_check()` trigger function — fires on every UPDATE of progressive.value, arms jackpot when value >= must_hit_by, picks new threshold
+- `trg_progressive_threshold` trigger on progressive table
+- `progressive_contribute()` RPC updated
+- `progressive_hit()` RPC — resets pot, picks new threshold
+- Current stuck pot at $26,800 unstuck: must_hit_by set to seed — fires on first spin after deploy
+
+### Version bump
+| File | Change |
+|------|--------|
+| `service-worker.js` | `CACHE = 'spbm5d-v608'` |
+| `index.html` | title, splash-ver, all `?v=` → `6.08` |

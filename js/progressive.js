@@ -893,6 +893,7 @@ var Progressive = (function () {
 
   /* ── Accessors ── */
   function mustHit()            { return _localMode ? (_localPotValue >= _localPotCeiling) : (_localValue >= _ceiling); }
+  function isForceArmed()       { return _forceArmed && !!_forceCommandId && !_forceClaimed; }
   function getDisplay()         { var v = _localMode ? _localPotValue : _localValue; return '$' + v.toFixed(2); }
   function getValue()           { return _localMode ? _localPotValue : _localValue; }
   function isLocalMode()        { return _localMode; }
@@ -914,6 +915,7 @@ var Progressive = (function () {
     updateLastSpin:     updateLastSpin,
     registerPlayer:     registerPlayer,
     mustHit:            mustHit,
+    isForceArmed:       isForceArmed,
     getDisplay:         getDisplay,
     getValue:           getValue,
     isConnected:        isConnected,

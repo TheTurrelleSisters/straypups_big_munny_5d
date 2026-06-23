@@ -250,6 +250,88 @@ function genBingoCard(){
   return ordered.length?ordered:card;
 }
 
+
+/* _genGuaranteedLazyTCard(callSeq)
+ * Given a 75-ball server sequence, generates a valid bingo card guaranteed
+ * to complete the Lazy-T pattern within the first 24 called balls.
+ *
+ * Lazy-T non-free cells and their column constraints:
+ *   Cell  4 -> col 4 (O: 61-75)   Cell  9 -> col 4 (O: 61-75)
+ *   Cell 10 -> col 0 (B:  1-15)   Cell 11 -> col 1 (I: 16-30)
+ *   Cell 13 -> col 3 (G: 46-60)   Cell 14 -> col 4 (O: 61-75)
+ *   Cell 19 -> col 4 (O: 61-75)   Cell 24 -> col 4 (O: 61-75)
+ *
+ * Returns a 25-element card array (cell 12 = null for free space),
+ * or null if the sequence doesn't have enough matching balls in first 24.
+ * ES5-safe.
+ */
+function _genGuaranteedLazyTCard(callSeq) {
+  /* Lazy-T cell -> column index */
+  var LAZYT_CELL_COL = {4:4, 9:4, 10:0, 11:1, 13:3, 14:4, 19:4, 24:4};
+  var lazytCells = [4, 9, 10, 11, 13, 14, 19, 24];
+
+  /* For each required cell, find a ball in first 24 that fits the column range */
+  var first24 = callSeq.slice(0, 24);
+  var card = new Array(25);
+  card[12] = null; /* free space */
+
+  /* Track which balls from first24 we've assigned */
+  var usedBalls = {};
+  /* Track which numbers are used per column */
+  var usedPerCol = {0:{}, 1:{}, 2:{}, 3:{}, 4:{}};
+
+  /* Assign Lazy-T cells first */
+  var assigned = {};
+  for(var li = 0; li < lazytCells.length; li++) {
+    var lCell = lazytCells[li];
+    var lCol  = LAZYT_CELL_COL[lCell];
+    var lo    = COL_RANGES[lCol][0];
+    var hi    = COL_RANGES[lCol][1];
+    var found = false;
+    for(var bi = 0; bi < first24.length; bi++) {
+      var ball = first24[bi];
+      if(ball >= lo && ball <= hi && !usedBalls[ball]) {
+        card[lCell]        = ball;
+        usedBalls[ball]    = true;
+        usedPerCol[lCol][ball] = true;
+        assigned[lCell]    = true;
+        found              = true;
+        break;
+      }
+    }
+    if(!found) return null; /* not enough matching balls in first 24 — fallback */
+  }
+
+  /* Fill remaining cells (non-Lazy-T, non-free) with valid column numbers */
+  for(var cell = 0; cell < 25; cell++) {
+    if(cell === 12 || assigned[cell]) continue;
+    var col  = Math.floor(cell / 5); /* cell = col*5 + row */
+    /* Actually cell layout: cell index = row*5 + col */
+    var col2 = cell % 5;
+    var lo2  = COL_RANGES[col2][0];
+    var hi2  = COL_RANGES[col2][1];
+    /* Build pool of unused numbers in this column */
+    var pool = [];
+    for(var n = lo2; n <= hi2; n++) {
+      if(!usedPerCol[col2][n]) pool.push(n);
+    }
+    if(!pool.length) return null; /* column exhausted — fallback */
+    /* Pick random unused number */
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    card[cell]             = pick;
+    usedPerCol[col2][pick] = true;
+  }
+
+  /* Assign card serial */
+  try {
+    var cnt = parseInt(localStorage.getItem('spbm_card_ctr') || '0', 10) + 1;
+    localStorage.setItem('spbm_card_ctr', String(cnt));
+    BG.cardSerial = 'CARD-T2-' + String(cnt).padStart(8, '0');
+  } catch(e) { BG.cardSerial = 'CARD-T2-UNKNOWN'; }
+
+  return card;
+}
+
 // opLog is defined in operator.js; stub here so game.js never throws
 function opLog(rec){if(typeof opLogImpl==='function') opLogImpl(rec); _writeGameHistory(rec);}
 
@@ -703,6 +785,24 @@ function doBingoSpin(){
 
   // Fresh card for this spin
   BG.card=genBingoCard();
+
+  // ── TRIGGER 2: Guaranteed Lazy-T card when force_jackpot is armed ──────────
+  // When the server threshold arms a force_jackpot command, generate a bingo
+  // card guaranteed to hit Lazy-T within the first 24 called balls.
+  // The WABC server sequence is already in BG.callSeq — we pick cell values
+  // from that sequence for the 8 non-free Lazy-T cells, then fill remaining
+  // cells normally. Card is still a valid bingo card with correct column ranges.
+  // Falls back to normal genBingoCard() if sequence doesn't have enough matching
+  // balls in first 24 (extremely unlikely but handled gracefully).
+  if(typeof Progressive !== 'undefined' && Progressive.isForceArmed &&
+     Progressive.isForceArmed() && BG.callSeq && BG.callSeq.length === 75) {
+    var _lazyTCard = _genGuaranteedLazyTCard(BG.callSeq);
+    if(_lazyTCard) {
+      BG.card = _lazyTCard;
+    }
+    // If null returned, BG.card already set by genBingoCard() above — no change
+  }
+  // ── END TRIGGER 2 guaranteed card ──────────────────────────────────────────
   BG.cardNumSet={};
   for(var i=0;i<25;i++){if(BG.card[i]!==null) BG.cardNumSet[BG.card[i]]=i;}
 
