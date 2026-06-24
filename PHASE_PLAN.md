@@ -1468,3 +1468,13 @@ commands armed while the player is mid-session.
 ## 6.12 — CRITICAL FIX: winPatterns undefined crash on spin
 - `js/game.js`: `doBingoSpin()` return value renamed to `_spinResult`. Added null guard (WABC bail-out) and undefined guard (async Trigger 2 path). `_continueDoBingoSpin()` now calls `_continueSpinAfterClaim()` directly via typeof check. Removed duplicate `_continueSpinAfterClaim` invocation that caused double-spin on Trigger 2 path.
 - Cache: `spbm5d-v612`
+
+---
+
+## 6.13 — CRITICAL FIX: Spin lockup from async Trigger 2 refactor
+**Root cause:** `_continueSpinAfterClaim()` is defined inside `doSpin()` as a closure and cannot be called from the top-level `_continueDoBingoSpin()` function. The async Trigger 2 path silently failed because `typeof _continueSpinAfterClaim === 'function'` was always `false` outside `doSpin()`, so the spin continuation never ran. Every spin exited early — no reels, no win, no error.
+
+**Fix:** Reverted Trigger 2 to a purely synchronous design. `tryAtomicClaim()` and the async DB round-trip removed entirely. `isForceArmed()` check runs synchronously — if true, `_genGuaranteedLazyTCard()` replaces the card in-place, then normal spin flow continues. Race protection is handled by `armAndClaim()` which already has an atomic race guard. `_continueDoBingoSpin()` no longer attempts to call `_continueSpinAfterClaim()`. `doSpin()` restored to original `var winPatterns=doBingoSpin()` + null check pattern.
+
+**Files changed:** `js/game.js`, `js/progressive.js` (`tryAtomicClaim` removed from API)
+- Cache: `spbm5d-v613`

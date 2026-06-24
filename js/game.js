@@ -800,21 +800,22 @@ function doBingoSpin(){
   //
   // _pendingGuaranteedClaim is set here if claim succeeds, read by armAndClaim().
   // ─────────────────────────────────────────────────────────────────────────────
+  // ── TRIGGER 2: Guaranteed Lazy-T card when force_jackpot is armed ──────────
+  // Purely synchronous — no async path needed.
+  // _forceArmed is set by _checkArmedCommand() before spin is pressed.
+  // The guaranteed card ensures Lazy-T fires naturally this spin.
+  // armAndClaim() (called when Lazy-T is detected) handles the atomic DB claim
+  // and race protection — it already has a built-in race guard.
+  // Only generate guaranteed card if _forceArmed is true AND sequence is ready.
   if(typeof Progressive !== 'undefined' && Progressive.isForceArmed &&
      Progressive.isForceArmed() && BG.callSeq && BG.callSeq.length === 75) {
-    /* Attempt atomic pre-claim — synchronous flag set by async response */
-    Progressive.tryAtomicClaim(function(claimed) {
-      if(claimed) {
-        var _lazyTCard = _genGuaranteedLazyTCard(BG.callSeq);
-        if(_lazyTCard) BG.card = _lazyTCard;
-      }
-      /* Continue spin with whatever card is set — normal flow resumes */
-      _continueDoBingoSpin(prevBallPos);
-    });
-    return; /* async path — _continueDoBingoSpin called in callback above */
+    var _lazyTCard = _genGuaranteedLazyTCard(BG.callSeq);
+    if(_lazyTCard) BG.card = _lazyTCard;
+    /* Fall through — normal synchronous spin continues below */
   }
   // ── END TRIGGER 2 guaranteed card ──────────────────────────────────────────
   _continueDoBingoSpin(prevBallPos);
+  return BG.winPatterns; /* always return winPatterns synchronously */
 }
 
 function _continueDoBingoSpin(prevBallPos) {
@@ -867,8 +868,6 @@ function _continueDoBingoSpin(prevBallPos) {
       BG._coverAll1to40=true;break;
     }
   }
-  /* Trigger spin continuation — _continueSpinAfterClaim is defined inside doSpin() */
-  if (typeof _continueSpinAfterClaim === 'function') _continueSpinAfterClaim();
   return BG.winPatterns;
 }
 
@@ -1451,13 +1450,14 @@ function doSpin(){
   }
   GS.hasSpun=true;GS.state='active';
 
-  var _spinResult=doBingoSpin();
-  if(_spinResult===null) return; /* WABC bail-out — bet refunded inside doBingoSpin */
-  if(_spinResult===undefined) return; /* async Trigger 2 — _continueDoBingoSpin calls _continueSpinAfterClaim */
+  var winPatterns=doBingoSpin();
+
+  /* v6.1 FIX: doBingoSpin() returns null when WABC is unavailable —
+     bet already refunded inside doBingoSpin, do not continue. */
+  if(winPatterns===null) return;
 
   // ── SPIN CONTINUATION ───────────────────────────────────────────────────
-  // _continueDoBingoSpin() sets BG.winPatterns then calls _continueSpinAfterClaim.
-  // Both sync and async (Trigger 2) paths go through _continueDoBingoSpin.
+  // ALL spin logic lives in _continueSpinAfterClaim().
   function _continueSpinAfterClaim(){
     /* Mark entertainment phase as active. Server (wabc-ball-ticker) drives
        actual ball positions via WABC.onChange → _onServerBallPos. */
