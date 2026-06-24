@@ -1494,10 +1494,10 @@ function doSpin(){
          basePat will be winPatterns[0] = lowest reel-bearing pattern. */
       _reelPats.sort(function(a,b){return a.pay[S.cpl-1]-b.pay[S.cpl-1];});
       winPatterns=_reelPats.concat(_progPats);
-      /* Progressive: main reels show 3x JP symbol.
-         Non-progressive: lowest reel-bearing pattern drives main reels.
+      /* Main reels always show basePat (lowest reel-bearing pattern) symbols.
+         Lazy-T shows [7,7,7] during its own Red Spin stop, not here.
          Cover All alone (no reel patterns): non-winning combo on reels. */
-      spinData=forcedSpinResult(_progInWins?REEL_SYMS['lazyt']:(_reelPats.length>0?(REEL_SYMS[_reelPats[0].reel]||REEL_SYMS['none']):REEL_SYMS['none']));
+      spinData=forcedSpinResult(_reelPats.length>0?(REEL_SYMS[_reelPats[0].reel]||REEL_SYMS['none']):REEL_SYMS['none']);
     }
 
     animateReels(spinData,function(){

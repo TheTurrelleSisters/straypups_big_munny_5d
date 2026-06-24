@@ -1478,3 +1478,14 @@ commands armed while the player is mid-session.
 
 **Files changed:** `js/game.js`, `js/progressive.js` (`tryAtomicClaim` removed from API)
 - Cache: `spbm5d-v613`
+
+---
+
+## 6.14 — FIX: Main reel shows basePat symbols on progressive + multi-pattern wins
+
+**Root cause:** `spinData` was forced to `REEL_SYMS['lazyt']` ([7,7,7]) whenever `_progInWins` was true, regardless of what `basePat` was. When Open Diamond (or any other pattern) co-won with Lazy-T, the main reels showed 3× JP symbols instead of the correct basePat symbols. Player saw Open Diamond highlighted on the card with JP symbols on the reels — visually incorrect.
+
+**Fix:** `spinData` now always uses `REEL_SYMS[_reelPats[0].reel]` (basePat) for the main reel display. Lazy-T correctly shows [7,7,7] during its own dedicated Red Spin stop in the runRS() sequence — not on the initial main reel result. This matches VGT Class II design: basePat always drives the initial reel stop; higher patterns play in ascending Red Spin sequence.
+
+**Files changed:** `js/game.js`
+- Cache: `spbm5d-v614`
