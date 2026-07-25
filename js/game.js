@@ -1911,157 +1911,8 @@ function initProgressiveMeter(){
 }
 
 
-/* ─────────────────────────────────────────────
-   VIRTUAL WALLET OVERLAY — v6.05
-   Opens on INSERT CASH button.
-   Source game slug: 'straypups_5d'
-───────────────────────────────────────────── */
-(function() {
-
-  var SB_URL  = 'https://gdmmoeggkqsvqnqyrubx.supabase.co';
-  var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdkbW1vZWdna3FzdnFucXlydWJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MDYzNTQsImV4cCI6MjA5NjM4MjM1NH0.i86afL3CMpmru4z3LZAbCJkxBiwo25QbwEji8tDBAis';
-
-  function _sbFetch(path, opts) {
-    var url = SB_URL + '/rest/v1/' + path;
-    var headers = {
-      'apikey':        SB_ANON,
-      'Authorization': 'Bearer ' + SB_ANON,
-      'Content-Type':  'application/json',
-      'Prefer':        opts.prefer || 'return=representation'
-    };
-    return fetch(url, {
-      method:  opts.method || 'GET',
-      headers: headers,
-      body:    opts.body ? JSON.stringify(opts.body) : undefined
-    }).then(function(r) {
-      if (opts.prefer === 'return=minimal') return {};
-      return r.json();
-    });
-  }
-
-  function _nick()  { return ((window._playerNickname||'')).toLowerCase().trim(); }
-  function _fmt(v)  { var n=parseFloat(v);if(isNaN(n)||n<0)n=0;return '$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
-  function _el(id)  { return document.getElementById(id); }
-
-  var _gameLabels = {
-    'straypups_1d':'StrayPups $1','straypups_5d':'StrayPups $5',
-    'maxines':"Maxine's",'tsbigmunny':'Turrelle Sisters',
-    'pokeher':'Poke-Her','lobby':'Lobby'
-  };
-
-  /* ── Open wallet overlay ── */
-  window._openWalletOv = function() {
-    var n      = _nick();
-    var balEl  = _el('wov-bal');
-    var nickEl = _el('wov-nick');
-    var listEl = _el('wov-list');
-    var ov     = _el('wallet-ov');
-    if (!ov) return;
-    if (nickEl) nickEl.textContent = n ? ('\u2605 '+(window._playerNickname||'')) : '';
-    if (listEl) listEl.innerHTML = '<div id="wov-empty">Loading\u2026</div>';
-    if (balEl)  balEl.textContent = '$0.00';
-    ov.classList.add('on');
-    if (!n) {
-      if (listEl) listEl.innerHTML = '<div id="wov-empty">No nickname set.<br>Return to lobby to log in.</div>';
-      return;
-    }
-    /* Load wallet balance */
-    _sbFetch('wallet?select=balance&nickname=eq.'+encodeURIComponent(n), {})
-      .then(function(d){ if(d&&d[0]&&balEl) balEl.textContent=_fmt(d[0].balance); })
-      .catch(function(){});
-    /* Load available vouchers */
-    _sbFetch('vouchers?select=id,amount,source_game,created_at'+
-      '&nickname=eq.'+encodeURIComponent(n)+
-      '&status=eq.available&order=created_at.desc', {})
-      .then(function(data) {
-        if (!data||!data.length) {
-          if(listEl) listEl.innerHTML='<div id="wov-empty">No vouchers available.<br>Return to lobby to generate one.</div>';
-          return;
-        }
-        if (listEl) {
-          listEl.innerHTML=data.map(function(v){
-            var d=new Date(v.created_at);
-            var dt=d.toLocaleDateString()+', '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-            var lbl=_gameLabels[v.source_game]||(v.source_game||'Lobby');
-            return '<div class="wov-voucher" onclick="_redeemVoucher('+v.id+','+v.amount+')">'+
-              '<div class="wov-v-icon">\u2b50</div>'+
-              '<div class="wov-v-body">'+
-                '<div class="wov-v-game">'+lbl+'</div>'+
-                '<div class="wov-v-date">'+dt+'</div>'+
-              '</div>'+
-              '<div style="text-align:right">'+
-                '<div class="wov-v-amt">'+_fmt(v.amount)+'</div>'+
-                '<div class="wov-v-use">TAP TO USE</div>'+
-              '</div>'+
-            '</div>';
-          }).join('');
-        }
-      })
-      .catch(function(){
-        if(listEl) listEl.innerHTML='<div id="wov-empty">Could not load vouchers.<br>Check connection.</div>';
-      });
-  };
-
-  /* ── Redeem voucher ── */
-  window._redeemVoucher = function(vid, amount) {
-    var n=_nick(); if(!n) return;
-    var listEl=_el('wov-list');
-    if(listEl) listEl.innerHTML='<div id="wov-empty">Redeeming\u2026</div>';
-    _sbFetch('vouchers?id=eq.'+vid, {
-      method:'PATCH', prefer:'return=minimal',
-      body:{status:'redeemed',redeemed_at:new Date().toISOString()}
-    })
-    .then(function(){
-      var _prev=S.bal;
-      S.bal+=parseFloat(amount);
-      opLog({type:'VOUCHER_REDEEM',voucherId:vid,amount:amount,balBefore:_prev,balAfter:S.bal});
-      updUI(); sndCreditsAddUp();
-      var ov=_el('wallet-ov'); if(ov) ov.classList.remove('on');
-      toast(_fmt(amount)+' LOADED FROM WALLET');
-    })
-    .catch(function(){
-      if(listEl) listEl.innerHTML='<div id="wov-empty">Redemption failed. Try again.</div>';
-    });
-  };
-
-  /* ── Cash Out → create voucher, update wallet balance, return to lobby ── */
-  window._doCashOutToWallet = function(amount, onDone) {
-    var n=_nick();
-    if(!n||typeof fetch==='undefined'){onDone(false);return;}
-    var newAmount=parseFloat(amount);
-    /* Step 1: insert voucher */
-    _sbFetch('vouchers',{
-      method:'POST',
-      body:{nickname:n,amount:newAmount,status:'available',source_game:'straypups_5d'}
-    })
-    .then(function(){
-      /* Step 2: fetch current wallet balance, then upsert with new total */
-      return _sbFetch('wallet?select=balance&nickname=eq.'+encodeURIComponent(n),{})
-        .then(function(wd){
-          var cur=wd&&wd[0]?parseFloat(wd[0].balance):0;
-          if(isNaN(cur))cur=0;
-          var newBal=cur+newAmount;
-          return _sbFetch('wallet',{
-            method:'POST',
-            prefer:'return=minimal',
-            headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-            body:{nickname:n,balance:newBal}
-          });
-        });
-    })
-    .then(function(){ onDone(true); })
-    .catch(function(){ onDone(false); });
-  };
-
-  /* ── Wire close / backdrop tap ── */
-  document.addEventListener('DOMContentLoaded',function(){
-    var cb=_el('wov-close'); if(cb) cb.addEventListener('click',function(){_el('wallet-ov').classList.remove('on');});
-    var ov=_el('wallet-ov'); if(ov) ov.addEventListener('click',function(e){if(e.target===ov)ov.classList.remove('on');});
-  });
-
-}());
-
 /* -- INIT -- */
+WalletUI.init();
 /* Read player nickname from URL param (passed by Gold Coins Casino lobby) */
 (function(){
   try {
@@ -2118,7 +1969,7 @@ document.getElementById('lobby-btn').addEventListener('click',function(){
   if(S.bal<=0){toast('NOTHING TO CASH OUT');return;}
   var _coAmt=S.bal;
   /* v6.05: save to virtual wallet as voucher, then zero balance */
-  window._doCashOutToWallet(_coAmt,function(ok){
+  WalletUI.cashOut(function(ok){
     S.bal=0;
     opLog({type:'CASH_OUT',amount:_coAmt,balBefore:_coAmt,balAfter:0,walletSaved:ok});
     updUI();
@@ -2137,7 +1988,7 @@ document.getElementById('lobby-btn').addEventListener('click',function(){
 document.getElementById('ic-btn').addEventListener('click',function(){
   if(S.spinning)return;
   /* v6.05: open virtual wallet overlay instead of local insert */
-  window._openWalletOv();
+  WalletUI.open();
 });
 document.getElementById('ic-ok').addEventListener('click',function(){var v=parseFloat(document.getElementById('ic-inp').value);if(v>0&&v<=9999){var _ciBal=S.bal;S.bal+=v;opLog({type:'CASH_IN',amount:v,balBefore:_ciBal,balAfter:S.bal});updUI();toast(fmt(v)+' ADDED');sndCreditsAddUp();}document.getElementById('ic-ov').classList.remove('on');});
 document.getElementById('ic-no').addEventListener('click',function(){document.getElementById('ic-ov').classList.remove('on');});
