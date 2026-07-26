@@ -476,9 +476,22 @@ var WalletUI = (function () {
   }
 
   /* ── Public init ── */
+  /* Polls every 500ms until nickname is available, then loads wallet */
+  var _walletInitDone = false;
+  function _startWalletPolling() {
+    var n = nick();
+    if (n && !_walletInitDone) {
+      _walletInitDone = true;
+      loadWallet();
+    } else if (!n) {
+      setTimeout(_startWalletPolling, 500);
+    }
+  }
+
   function init() {
     _ensureOverlay();
     _wireExitEvents();
+    _startWalletPolling(); /* begin polling for nickname */
   }
 
   return {
