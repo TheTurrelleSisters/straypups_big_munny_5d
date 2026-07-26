@@ -344,7 +344,8 @@ var WalletUI = (function () {
       /* 2. Deduct from wallet balance (honor system) */
       _adjustBal(-amount, function() {
         /* 3. Credit game balance */
-        S.bal += amount;
+        var _mult = (typeof window._WALLET_BAL_MULTIPLIER !== 'undefined') ? window._WALLET_BAL_MULTIPLIER : 1;
+        S.bal += amount * _mult;
         if (typeof updUI === 'function') updUI();
         if (typeof sndCreditsAddUp === 'function') sndCreditsAddUp();
         if (typeof opLog === 'function') {
@@ -377,7 +378,8 @@ var WalletUI = (function () {
       }
       /* Deduct from wallet balance */
       _adjustBal(-amount, function() {
-        S.bal += amount;
+        var _mult = (typeof window._WALLET_BAL_MULTIPLIER !== 'undefined') ? window._WALLET_BAL_MULTIPLIER : 1;
+        S.bal += amount * _mult;
         if (typeof updUI === 'function') updUI();
         if (typeof sndCreditsAddUp === 'function') sndCreditsAddUp();
         if (typeof opLog === 'function') {

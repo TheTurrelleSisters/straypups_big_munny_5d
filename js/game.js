@@ -1973,16 +1973,7 @@ document.getElementById('lobby-btn').addEventListener('click',function(){
     S.bal=0;
     opLog({type:'CASH_OUT',amount:_coAmt,balBefore:_coAmt,balAfter:0,walletSaved:ok});
     updUI();
-    toast('CASHED OUT '+fmt(_coAmt)+(ok?' • SAVED TO WALLET':''));
-    /* Return to lobby after brief delay */
-    setTimeout(function(){
-      var _lobbyUrl='https://theturrellesisters.github.io/turrelle_gold_coins_casino/';
-      try{
-        var _ref=document.referrer;
-        if(_ref&&_ref.indexOf('theturrellesisters.github.io')!==-1)_lobbyUrl=_ref;
-      }catch(e){}
-      window.location.href=_lobbyUrl;
-    },2200);
+    toast('CASHED OUT '+fmt(_coAmt)+(ok?' • SAVED TO WALLET':' • OFFLINE'));
   });
 });
 document.getElementById('ic-btn').addEventListener('click',function(){
