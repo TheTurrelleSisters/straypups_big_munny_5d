@@ -57,6 +57,7 @@ var WalletUI = (function () {
     };
     return fetch(SB_URL+'/rest/v1/'+path, {
       method:  opts.method || 'GET',
+      mode:    'cors',
       headers: headers,
       body:    opts.body ? JSON.stringify(opts.body) : undefined
     }).then(function(r) {
@@ -70,6 +71,7 @@ var WalletUI = (function () {
   function _rpc(fn, params, cb) {
     fetch(SB_URL+'/rest/v1/rpc/'+fn, {
       method: 'POST',
+      mode:   'cors',
       headers: {
         'apikey': SB_ANON, 'Authorization': 'Bearer '+SB_ANON,
         'Content-Type': 'application/json'
