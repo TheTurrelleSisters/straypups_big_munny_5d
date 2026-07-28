@@ -1986,4 +1986,22 @@ document.getElementById('ic-no').addEventListener('click',function(){document.ge
 document.querySelectorAll('.icpre').forEach(function(btn){btn.addEventListener('click',function(){var a=parseFloat(btn.getAttribute('data-a'));var _ciBalP=S.bal;S.bal+=a;opLog({type:'CASH_IN',amount:a,balBefore:_ciBalP,balAfter:S.bal});updUI();toast(fmt(a)+' ADDED');sndCreditsAddUp();document.getElementById('ic-ov').classList.remove('on');});});
 document.getElementById('ic-ov').addEventListener('click',function(e){if(e.target===this)this.classList.remove('on');});
 
+
+/* ══════════════════════════════════════════════════════════════════════
+   WALLET BRIDGE — required by wallet_module.js
+   game.js is wrapped in an IIFE, so S / updUI / toast / opLog /
+   sndCreditsAddUp were invisible to wallet_module.js (a separate script).
+   `S.bal += amount` threw ReferenceError inside the redeem callback, so the
+   voucher list stuck on "Redeeming..." and _disablePresets(false) never ran,
+   leaving the quick-load buttons permanently disabled. The toast guards
+   (`typeof toast === 'function'`) silently failed too, hiding the error.
+   Exporting the same object references — not copies — keeps them in sync.
+   ══════════════════════════════════════════════════════════════════════ */
+window.S               = S;
+window.updUI           = updUI;
+window.toast           = toast;
+window.opLog           = opLog;
+window.sndCreditsAddUp = sndCreditsAddUp;
+window.fmt             = fmt;
+
 }());
