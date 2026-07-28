@@ -14,12 +14,12 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 #asset-store{display:none}
 
 /* â”€â”€ SPLASH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-#splash{position:fixed;inset:0;z-index:999;background:#000;
+#splash{position:fixed;top:0;right:0;bottom:0;left:0;inset:0;z-index:999;background:#000;
   display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;
   -webkit-align-items:center;align-items:center;-webkit-justify-content:flex-end;justify-content:flex-end;
   cursor:pointer;-webkit-transition:opacity .55s;transition:opacity .55s}
 #splash.fade{opacity:0;pointer-events:none}
-#splash-bg{position:absolute;inset:0;background-size:cover;background-position:center top;
+#splash-bg{position:absolute;top:0;right:0;bottom:0;left:0;inset:0;background-size:cover;background-position:center top;
   -webkit-animation:szoom 3.5s ease forwards;animation:szoom 3.5s ease forwards}
 @-webkit-keyframes szoom{from{-webkit-transform:scale(1.07);opacity:.8}to{-webkit-transform:scale(1);opacity:1}}
 @keyframes szoom{from{transform:scale(1.07);opacity:.8}to{transform:scale(1);opacity:1}}
@@ -140,9 +140,9 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   box-shadow:inset 0 0 0 2px rgba(0,0,0,.8),0 0 14px rgba(212,175,55,.45),
     inset 0 3px 6px rgba(255,220,80,.18),inset 0 -3px 6px rgba(0,0,0,.5)}
 /* reel-window: the porthole mask — strong rounded corners clip top/bottom ghost symbols cleanly */
-.reel-window{position:absolute;inset:0;overflow:hidden;border-radius:20px}
+.reel-window{position:absolute;top:0;right:0;bottom:0;left:0;inset:0;overflow:hidden;border-radius:20px}
 /* top/bottom gradient fade so ghost symbols dissolve naturally into the reel frame */
-.reel-window::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:5;
+.reel-window::after{content:'';position:absolute;top:0;right:0;bottom:0;left:0;inset:0;pointer-events:none;z-index:5;
   background:linear-gradient(to bottom,
     rgba(20,5,0,.78) 0%,
     rgba(20,5,0,.30) 16%,
@@ -178,7 +178,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   pointer-events:none;z-index:25;
   box-shadow:0 0 6px 2px rgba(255,0,0,.7),0 0 12px 4px rgba(255,0,0,.4)}
 
-#red-ov{position:absolute;inset:0;pointer-events:none;z-index:6;background:transparent;
+#red-ov{position:absolute;top:0;right:0;bottom:0;left:0;inset:0;pointer-events:none;z-index:6;background:transparent;
   -webkit-transition:background .4s;transition:background .4s}
 #red-ov.on{background:rgba(180,0,0,.22);
   -webkit-animation:rp .8s ease infinite alternate;animation:rp .8s ease infinite alternate}
@@ -253,11 +253,11 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   -webkit-transform:translateX(-50%) translateY(14px);transform:translateX(-50%) translateY(14px);
   background:rgba(28,0,48,.96);color:var(--gold-lt);border:1px solid var(--gold-dk);
   border-radius:16px;padding:6px 18px;font-size:11px;letter-spacing:1px;font-weight:700;
-  opacity:0;pointer-events:none;-webkit-transition:all .28s;transition:all .28s;z-index:300;white-space:nowrap}
+  opacity:0;pointer-events:none;-webkit-transition:all .28s;transition:all .28s;z-index:700;white-space:nowrap}
 #toast.on{opacity:1;-webkit-transform:translateX(-50%) translateY(0);transform:translateX(-50%) translateY(0)}
 
 /* â”€â”€ JACKPOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-#jp-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:150;cursor:pointer;
+#jp-ov{display:none;position:fixed;top:0;right:0;bottom:0;left:0;inset:0;background:rgba(0,0,0,.9);z-index:150;cursor:pointer;
   -webkit-flex-direction:column;flex-direction:column;
   -webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center}
 #jp-ov.on{display:-webkit-flex;display:flex}
@@ -276,12 +276,12 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 #jp-hint{font-size:9px;color:rgba(245,216,120,.4);letter-spacing:2px;margin-top:16px;position:relative;z-index:1}
 
 /* ── PROGRESSIVE JACKPOT CELEBRATION (winner device) ── */
-#force-win-cel{display:none;position:fixed;inset:0;background:#000;z-index:250;
+#force-win-cel{display:none;position:fixed;top:0;right:0;bottom:0;left:0;inset:0;background:#000;z-index:250;
   -webkit-flex-direction:column;flex-direction:column;
   -webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;
   gap:10px;text-align:center;padding:24px;cursor:pointer;overflow:hidden}
 #force-win-cel.show{display:-webkit-flex;display:flex}
-#fw-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.6;z-index:0}
+#fw-video{position:absolute;top:0;right:0;bottom:0;left:0;inset:0;width:100%;height:100%;object-fit:cover;opacity:.6;z-index:0}
 #fw-title{position:relative;z-index:1;font-family:var(--fd);font-size:24px;letter-spacing:4px;
   color:var(--gold-lt);text-shadow:0 0 4px #000,0 0 20px rgba(212,175,55,.9)}
 #fw-amt{position:relative;z-index:1;font-family:var(--fd);font-size:48px;color:var(--crim-lt);
@@ -292,12 +292,12 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   background:linear-gradient(135deg,#1a4000,#2a6000);color:#fff;-webkit-appearance:none}
 
 /* ── ATTITUDE CHECK (other players' devices) ── */
-#attitude-check{display:none;position:fixed;inset:0;background:rgba(8,0,15,.95);z-index:240;
+#attitude-check{display:none;position:fixed;top:0;right:0;bottom:0;left:0;inset:0;background:rgba(8,0,15,.95);z-index:240;
   -webkit-flex-direction:column;flex-direction:column;
   -webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;
   gap:8px;text-align:center;padding:24px;overflow:hidden}
 #attitude-check.show{display:-webkit-flex;display:flex}
-#ac-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.6;z-index:0}
+#ac-video{position:absolute;top:0;right:0;bottom:0;left:0;inset:0;width:100%;height:100%;object-fit:cover;opacity:.6;z-index:0}
 #ac-top{position:relative;z-index:1;font-size:11px;color:var(--gold-lt);letter-spacing:2px;text-shadow:0 0 4px #000}
 #ac-title{position:relative;z-index:1;font-family:var(--fd);font-size:28px;letter-spacing:4px;color:var(--crim-lt);
   text-shadow:0 0 4px #000,0 0 20px rgba(255,0,0,.6)}
@@ -312,7 +312,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   background:linear-gradient(135deg,#1a4000,#2a6000);color:#fff;-webkit-appearance:none}
 
 /* â”€â”€ INSERT CASH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-#ic-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:120;
+#ic-ov{display:none;position:fixed;top:0;right:0;bottom:0;left:0;inset:0;background:rgba(0,0,0,.88);z-index:120;
   -webkit-flex-direction:column;flex-direction:column;
   -webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;gap:12px}
 #ic-ov.on{display:-webkit-flex;display:flex}
@@ -330,7 +330,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 .icbtn:not(.ok){background:rgba(80,0,0,.6);border-color:#660000}
 
 /* â”€â”€ HELP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-#help{display:none;position:fixed;inset:0;background:rgba(8,0,15,.97);z-index:200;
+#help{display:none;position:fixed;top:0;right:0;bottom:0;left:0;inset:0;background:rgba(8,0,15,.97);z-index:200;
   -webkit-flex-direction:column;flex-direction:column;overflow:hidden}
 #help.on{display:-webkit-flex;display:flex}
 #help-hdr{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;
@@ -382,7 +382,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 
 /* ── WALLET OVERLAY (v6.05) ── */
 #wallet-ov{
-  display:none;position:fixed;inset:0;z-index:180;
+  display:none;position:fixed;top:0;right:0;bottom:0;left:0;inset:0;z-index:180;
   background:rgba(0,0,0,.7);
   -webkit-align-items:flex-end;align-items:flex-end;
   -webkit-justify-content:center;justify-content:center;
