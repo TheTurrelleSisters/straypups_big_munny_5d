@@ -557,6 +557,89 @@ var WalletUI = (function () {
     });
   }
 
+
+  /* ══════════════════════════════════════════════════════════════════════
+     LOCAL CREDIT MIGRATION
+     Any credits a player still has in this device's localStorage are moved
+     into their Supabase wallet the first time they open the game with a
+     nickname, then ADDED to the existing balance.
+
+     Guards, because this moves real money:
+       • runs only with a nickname and a live Supabase client
+       • the local key is CLEARED before the wallet write is confirmed
+         is impossible — it is cleared immediately after a confirmed write,
+         so a refresh mid-flight cannot double-credit
+       • a local_credit_migrations row (nickname, game_id) is written as a
+         second guard, and the migration is skipped if one already exists
+       • SP1D and SP5D share the localStorage key 'spbm_bal' (localStorage is
+         per-ORIGIN, not per-path), so clearing the key is what actually
+         prevents the second game double-claiming the same credits
+     ══════════════════════════════════════════════════════════════════════ */
+  var LOCAL_BAL_KEY = (typeof window._LOCAL_BAL_KEY === 'string') ? window._LOCAL_BAL_KEY : null;
+
+  function _readLocalCredits() {
+    if (!LOCAL_BAL_KEY) return 0;
+    try {
+      var raw = localStorage.getItem(LOCAL_BAL_KEY);
+      if (raw === null || raw === '') return 0;
+      var v;
+      if (raw.charAt(0) === '{') {                 /* JSON state blob */
+        var o = JSON.parse(raw);
+        v = parseFloat(o.balance !== undefined ? o.balance : o.bal);
+      } else {
+        v = parseFloat(raw);
+      }
+      if (isNaN(v) || v <= 0) return 0;
+      var mult = (typeof window._WALLET_BAL_MULTIPLIER !== 'undefined') ? window._WALLET_BAL_MULTIPLIER : 1;
+      return Math.round((v / mult) * 100) / 100;    /* store dollars */
+    } catch (e) { return 0; }
+  }
+
+  function _clearLocalCredits() {
+    if (!LOCAL_BAL_KEY) return;
+    try {
+      var raw = localStorage.getItem(LOCAL_BAL_KEY);
+      if (raw && raw.charAt(0) === '{') {
+        var o = JSON.parse(raw);
+        if (o.balance !== undefined) o.balance = 0;
+        if (o.bal !== undefined) o.bal = 0;
+        localStorage.setItem(LOCAL_BAL_KEY, JSON.stringify(o));
+      } else {
+        localStorage.setItem(LOCAL_BAL_KEY, '0');
+      }
+    } catch (e) {}
+  }
+
+  function migrateLocalCredits(cb) {
+    var n = nick();
+    var amt = _readLocalCredits();
+    if (!n || amt <= 0) { if (cb) cb(false, 0); return; }
+
+    /* Already migrated for this player + game? */
+    _sb('local_credit_migrations?select=nickname&nickname=eq.' + encodeURIComponent(n) +
+        '&game_id=eq.' + encodeURIComponent(slug()))
+      .then(function(rows) {
+        if (rows && rows.length) {          /* guard row exists — clear and stop */
+          _clearLocalCredits();
+          if (cb) cb(false, 0);
+          return;
+        }
+        _adjustBal(amt, function(ok) {
+          if (!ok) { if (cb) cb(false, 0); return; }
+          _clearLocalCredits();             /* only after a confirmed write */
+          _sb('local_credit_migrations', {
+            method: 'POST', prefer: 'return=minimal',
+            body: { nickname: n, game_id: slug(), amount: amt }
+          }).catch(function(){});
+          _insertVoucher(amt, 'redeemed', 'local_migration', function(){});
+          if (typeof toast === 'function') toast('Transferred ' + fmt(amt) + ' to your wallet');
+          loadWallet();
+          if (cb) cb(true, amt);
+        });
+      })
+      .catch(function() { if (cb) cb(false, 0); });
+  }
+
   /* ── Public init ── */
   /* Polls every 500ms until nickname is available, then loads wallet */
   var _walletInitDone = false;
@@ -565,6 +648,7 @@ var WalletUI = (function () {
     if (n && !_walletInitDone) {
       _walletInitDone = true;
       loadWallet();
+      migrateLocalCredits();
     } else if (!n) {
       setTimeout(_startWalletPolling, 500);
     }
@@ -582,5 +666,6 @@ var WalletUI = (function () {
     close:     close,
     cashOut:   cashOut,
     forceSave: forceSave,
+    migrateLocalCredits: migrateLocalCredits,
   };
 }());
