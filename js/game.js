@@ -1987,6 +1987,15 @@ document.querySelectorAll('.icpre').forEach(function(btn){btn.addEventListener('
 document.getElementById('ic-ov').addEventListener('click',function(e){if(e.target===this)this.classList.remove('on');});
 
 
+/* v-fix: the PAY TABLE overlay could be opened but NEVER dismissed — its
+   close button had no listener at all in this game (SP1D wires it; SP5D and
+   Maxine never did). Players had to reload to escape the overlay. */
+document.getElementById('help-close') && document.getElementById('help-close')
+  .addEventListener('click', function() {
+    var h = document.getElementById('help');
+    if (h) h.classList.remove('on');
+  });
+
 /* ══════════════════════════════════════════════════════════════════════
    WALLET BRIDGE — required by wallet_module.js
    game.js is wrapped in an IIFE, so S / updUI / toast / opLog /
